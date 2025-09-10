@@ -1,0 +1,271 @@
+#Phylonetics - Claudia Solis-Lemus
+#"PHYLONETWORKS"
+
+#https://gtiley.github.io/Botany2023-Networks/
+
+
+########################### - 10/4/23
+#1) convert my fasta alignments into nexus format for MrBayes
+#I installed seqmagick v0.8.6 for this purpose - the general command will be 
+pwd
+#/media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/23Locus_files/23Locus_matrix/Gene_trees/MrBayes_no_recombo
+
+#created as script to convert fa to nex for all 1807 no recombination loci - fixes lots of formating errors too
+./combined_matrix_no_recomb1.sh
+
+for i in 170 9233 9271 9293 9382 9384 9447 9448 9507 9531 9560 9567 9650 9709 9715 9773 9814 9855 9875 9879 9906 9907 9937
+do
+#fix problem with - in names for MrBayes
+seqmagick convert --output-format nexus --alphabet dna ../STRG.$i.1.rename.fa STRG.$i.1.rename.nex
+tr -d \'\" < STRG.$i.1.rename.nex | sed 's/-mac/-mac  /g' | sed 's/-ist/-ist  /g' | sed 's/data/DATA/g' | sed 's/dimensions/Dimensions/g' | sed 's/ntax/NTAX/g' | sed 's/nchar/NCHAR/g' | sed 's/format/Format/g' | sed 's/DATAtype/DATATYPE/g' | sed 's/dna/DNA/g' | sed 's/missing/MISSING/g' | sed 's/gap/GAP/g' | sed 's/interleave/INTERLEAVE/g' | sed 's/matrix/Matrix/g' > STRG.$i.1.rename1.nex
+done
+
+
+
+#bayesian trees. Coping over scripts and mbblock from the workshop file system
+#Subfolder structure
+#/scripts
+#/Nexus_alignments
+
+#inside the Nexus_alignments folder create a tar.gz of alignment
+tar -czf Nex_alignments.tar.gz *.nex
+
+#ready to run need to convert this command ../scripts/mb.pl input/1_seqgen.tar.gz -m ../scripts/mbblock.txt -o mb-output
+mkdir mb-output
+
+scripts/mb.pl Nexus_alignments/Nex_alignments.tar.gz -m scripts/mbblock.txt -o mb-output
+
+
+
+#look at the output - 
+tar -tf mb-output/Nex_alignments.mb.tar | wc -l
+#1807 results
+
+
+#Script was called as follows:
+perl mb.pl Nexus_alignments/Nex_alignments.tar.gz -m scripts/mbblock.txt -o mb-output
+
+
+##output from bucky below
+# now running the BUCKy without decompressing anything..
+
+#perl bucky.pl mb-output/Nex_alignments.mb.tar -o bucky-output
+
+#Found 23 taxa shared across all genes in this archive, 8855 of 8855 possible quartets will be run using output from 1803 total genes.
+#Summarizing MrBayes output for 1803 genes.
+#Job server successfully created.
+
+#  Analyses complete: 8855/8855..
+#  All connections closed.
+#Total execution time: 2 days, 18 hours, 35 minutes, 38 seconds.
+
+
+
+###starting the plots for expected and observed Concordance factors as a visual measure of fit to trees (1 tree) vs networks (1-4 hybridizations).
+/media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/23Locus_files/23Locus_matrix/Gene_trees/MrBayes_no_recombo
+
+cp ../../Gene_trees/No_recombo_loci/Phylonetworks/Run1_0hmax_1800trees.out .
+cp ../../Gene_trees/No_recombo_loci/Phylonetworks/Run1_1hmax_1800trees.out .
+
+
+#In Julia
+
+using PhyloNetworks
+using PhyloPlots
+using RCall
+using DataFrames
+using CSV
+
+
+####### Comparing 0 hybrids vs 1 hybrid
+
+buckyCF = readTableCF("bucky-output/Nex_alignments.CFs.csv") # read observed quartet CF
+
+#SNAQ tree estimated earlier in prior document... Botany2023 original
+net0b = readTopology("Run1_0hmax_1800trees.out") # tree estimated earlier with snaq!
+
+net1b = readTopology("Run1_1hmax_1800trees.out") # network estimated earlierw with one hybridization event
+
+#problem - somewhere in the bucky run, the csv file has been converted so that cuspidata is now cuspiDATA... need to fix that manually
+#globally replaced cuspiDATA with cuspidata in the csv file...
+topologyQPseudolik!(net0b, buckyCF)         # update the fitted CFs under net0
+
+
+
+fitCF0 = fittedQuartetCF(buckyCF, :long)    # extract them to a data frame
+topologyQPseudolik!(net1b, buckyCF)         # update the fitted CFs under net1
+fitCF1 = fittedQuartetCF(buckyCF, :long)    # extract them to a data frame
+
+#now combine CF0 and CF1
+fitCF = rename(fitCF0, :expCF => :expCF_net0); # rename column "expCF" to "expCF_net0"
+fitCF[!,:expCF_net1] = fitCF1[!,:expCF];         # add new column "expCF_net1"
+CSV.write("fittedCF.csv", fitCF)        # export to .csv file
+
+
+#
+fitCF0[:, :h] = zeros(Int64, size(fitCF0, 1))
+fitCF1[:, :h] = ones(Int64, size(fitCF1, 1))
+fitCF = vcat(fitCF0, fitCF1)
+fitCF
+
+
+@rlibrary ggplot2
+ggplot(fitCF, aes(x=:obsCF, y=:expCF)) + geom_point(alpha=0.1) +
+  xlab("CF observed in gene trees") + ylab("CF expected under tree (h=0) or network (h=1)") +
+  facet_grid(R"~h", labeller = label_both)
+ggsave("fittedCFs.png", height=4, width=7)
+
+##result - the h0 and h1 data look pretty similar... "fittedCFs.png"   this would seem to reject the network requirement
+
+
+################comparinng 1 hybrid vs 2 hybrids
+
+cp ../../Gene_trees/No_recombo_loci/Phylonetworks/Run1_2hmax_1800trees.out .
+
+buckyCF = readTableCF("bucky-output/Nex_alignments.CFs.csv") # read observed quartet CF
+
+#SNAQ tree estimated earlier in prior document... Botany2023 original
+net0b = readTopology("Run1_1hmax_1800trees.out") # tree estimated earlier with snaq!
+
+net1b = readTopology("Run1_2hmax_1800trees.out") # network estimated earlierw with one hybridization event
+
+#problem - somewhere in the bucky run, the csv file has been converted so that cuspidata is now cuspiDATA... need to fix that manually
+#globally replaced cuspiDATA with cuspidata in the csv file...
+topologyQPseudolik!(net0b, buckyCF)         # update the fitted CFs under net0b
+
+
+
+fitCF0 = fittedQuartetCF(buckyCF, :long)    # extract them to a data frame
+topologyQPseudolik!(net1b, buckyCF)         # update the fitted CFs under net1
+fitCF1 = fittedQuartetCF(buckyCF, :long)    # extract them to a data frame
+
+#now combine CF0 and CF1
+fitCF = rename(fitCF0, :expCF => :expCF_net0); # rename column "expCF" to "expCF_net0"
+fitCF[!,:expCF_net1] = fitCF1[!,:expCF];         # add new column "expCF_net1"
+CSV.write("fittedCF.csv", fitCF)        # export to .csv file
+
+
+#
+fitCF0[:, :h] = zeros(Int64, size(fitCF0, 1))
+fitCF1[:, :h] = ones(Int64, size(fitCF1, 1))
+fitCF = vcat(fitCF0, fitCF1)
+fitCF
+
+
+@rlibrary ggplot2
+ggplot(fitCF, aes(x=:obsCF, y=:expCF)) + geom_point(alpha=0.1) +
+  xlab("CF observed in gene trees") + ylab("CF expected under network (h=1) or network (h=2)") +
+  facet_grid(R"~h", labeller = label_both)
+ggsave("fitted_1_vs2_CFs_2024.png", height=4, width=7)
+
+################comparinng 2 hybrid vs 3 hybrids
+
+cp ../../Gene_trees/No_recombo_loci/Phylonetworks/Run1_3hmax_1800trees.out .
+
+buckyCF = readTableCF("bucky-output/Nex_alignments.CFs.csv") # read observed quartet CF
+
+#SNAQ tree estimated earlier in prior document... Botany2023 original
+net0b = readTopology("Run1_2hmax_1800trees.out") # tree estimated earlier with snaq!
+
+net1b = readTopology("Run1_3hmax_1800trees.out") # network estimated earlierw with one hybridization event
+
+#problem - somewhere in the bucky run, the csv file has been converted so that cuspidata is now cuspiDATA... need to fix that manually
+#globally replaced cuspiDATA with cuspidata in the csv file...
+topologyQPseudolik!(net0b, buckyCF)         # update the fitted CFs under net0
+
+
+
+fitCF0 = fittedQuartetCF(buckyCF, :long)    # extract them to a data frame
+topologyQPseudolik!(net1b, buckyCF)         # update the fitted CFs under net1
+fitCF1 = fittedQuartetCF(buckyCF, :long)    # extract them to a data frame
+
+#now combine CF0 and CF1
+fitCF = rename(fitCF0, :expCF => :expCF_net0); # rename column "expCF" to "expCF_net0"
+fitCF[!,:expCF_net1] = fitCF1[!,:expCF];         # add new column "expCF_net1"
+CSV.write("fittedCF.csv", fitCF)        # export to .csv file
+
+
+#
+fitCF0[:, :h] = zeros(Int64, size(fitCF0, 1))
+fitCF1[:, :h] = ones(Int64, size(fitCF1, 1))
+fitCF = vcat(fitCF0, fitCF1)
+fitCF
+
+
+@rlibrary ggplot2
+ggplot(fitCF, aes(x=:obsCF, y=:expCF)) + geom_point(alpha=0.1) +
+  xlab("CF observed in gene trees") + ylab("CF expected under network (h=2) or network (h=3)") +
+  facet_grid(R"~h", labeller = label_both)
+ggsave("fitted_2_vs3_CFs_2024.png", height=4, width=7)
+
+## no obvious improvement from 2-3
+#############comparing hybrid 3 vs 4
+
+cp ../../Gene_trees/No_recombo_loci/Phylonetworks/Run1_4hmax_1800trees.out .
+
+buckyCF = readTableCF("bucky-output/Nex_alignments.CFs.csv") # read observed quartet CF
+
+#SNAQ tree estimated earlier in prior document... Botany2023 original
+net0b = readTopology("Run1_3hmax_1800trees.out") # tree estimated earlier with snaq!
+
+net1b = readTopology("Run1_4hmax_1800trees.out") # network estimated earlierw with one hybridization event
+
+#problem - somewhere in the bucky run, the csv file has been converted so that cuspidata is now cuspiDATA... need to fix that manually
+#globally replaced cuspiDATA with cuspidata in the csv file...
+topologyQPseudolik!(net0b, buckyCF)         # update the fitted CFs under net0
+
+
+
+fitCF0 = fittedQuartetCF(buckyCF, :long)    # extract them to a data frame
+topologyQPseudolik!(net1b, buckyCF)         # update the fitted CFs under net1
+fitCF1 = fittedQuartetCF(buckyCF, :long)    # extract them to a data frame
+
+#now combine CF0 and CF1
+fitCF = rename(fitCF0, :expCF => :expCF_net0); # rename column "expCF" to "expCF_net0"
+fitCF[!,:expCF_net1] = fitCF1[!,:expCF];         # add new column "expCF_net1"
+CSV.write("fittedCF.csv", fitCF)        # export to .csv file
+
+
+#
+fitCF0[:, :h] = zeros(Int64, size(fitCF0, 1))
+fitCF1[:, :h] = ones(Int64, size(fitCF1, 1))
+fitCF = vcat(fitCF0, fitCF1)
+fitCF
+
+
+@rlibrary ggplot2
+ggplot(fitCF, aes(x=:obsCF, y=:expCF)) + geom_point(alpha=0.1) +
+  xlab("CF observed in gene trees") + ylab("CF expected under network (h=3) or network (h=4)") +
+  facet_grid(R"~h", labeller = label_both)
+ggsave("fitted_3_vs4_CFs2024.png", height=4, width=7)
+
+
+
+
+
+
+#######TICR test in julia using the PhyloNetwork 0 hybrid tree as the reference
+
+# extracting the best tree from the Run1_0hmax_1800trees.out for the comparative input
+head -n 1 Run1_0hmax_1800trees.out > Run1_0hmax_1800trees.tre
+
+julia
+using QuartetNetworkGoodnessFit, CSV, PhyloPlots, PhyloNetworks, RCall, DataFrames, CSV
+df = DataFrame(CSV.File("bucky-output/Nex_alignments.CFs.csv"))
+dat = df[:,[1,2,3,4,5,8,11]]
+snaqtree = readTopology("Run1_0hmax_1800trees.tre")
+rootatnode!(snaqtree,"Entada_abyssinica")
+plot(snaqtree,:R, showEdgeLength=true)
+out_Phylonet = ticr!(snaqtree,dat,false)
+out_Phylonet[1]
+ out_Phylonet[1]
+0.8765755806494581
+###NOT SIGNIFICANT! This makes sense - the difference in tree topology created conflict and evidence of hybridization!
+
+
+
+
+
+
+
+
