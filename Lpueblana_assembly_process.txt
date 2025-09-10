@@ -1,0 +1,50 @@
+#L. pueblana draft assembly with soapdenovo
+
+#copied reads from Archive to  - /raid2/labs/Bailey_Lab/projects/Lpueblana_genome01_10_16
+
+#trimming reads with trimmomatic 
+
+java -jar /raid2/labs/Bailey_Lab/programs/Trimmomatic-0.32/trimmomatic-0.32.jar PE -threads 16 -phred33 /raid2/labs/Bailey_Lab/projects/Lpueblana_genome01_10_16/PueblanaG-DNA-250bp_1.fastq /raid2/labs/Bailey_Lab/projects/Lpueblana_genome01_10_16/PueblanaG-DNA-250bp_2.fastq /raid2/labs/Bailey_Lab/projects/Lpueblana_genome01_10_16/PueblanaG-DNA-250bp_1.paired.fastq /raid2/labs/Bailey_Lab/projects/Lpueblana_genome01_10_16/PueblanaG-DNA-250bp_1.unpair.fastq /raid2/labs/Bailey_Lab/projects/Lpueblana_genome01_10_16/PueblanaG-DNA-250bp_2.paired.fastq /raid2/labs/Bailey_Lab/projects/Lpueblana_genome01_10_16/PueblanaG-DNA-250bp_2.unpaired.fastq ILLUMINACLIP:/raid2/labs/Bailey_Lab/programs/Trimmomatic-0.32/adapters/TruSeq3-PE-2.fa:2:30:10 LEADING:25 TRAILING:25 SLIDINGWINDOW:5:25 MINLEN:65
+
+#results 
+#- PueblanaG-DNA-250bp_1.paired.fastq:155435448
+#- PueblanaG-DNA-250bp_2.paired.fastq: 155435448
+
+# running Soap de novo
+
+#Config file:
+#maximal read length
+max_rd_len=200
+[LIB]
+#average insert size
+avg_ins=250
+#if sequence needs to be reversed
+reverse_seq=0
+#in which part(s) the reads are used
+asm_flags=3
+#use only first 100 bps of each read
+rd_len_cutoff=200
+#in which order the reads are used while scaffolding
+rank=1
+# cutoff of pair number for a reliable connection (at least 3 for short insert size)
+pair_num_cutoff=3
+#minimum aligned length to contigs for a reliable read location (at least 32 for short insert size)
+map_len=32
+#a pair of fastq file, read 1 file should always be followed by read 2 file
+q1=/raid2/labs/Bailey_Lab/projects/Lpueblana_genome01_10_16/PueblanaG-DNA-250bp_1.paired.fastq
+q2=/raid2/labs/Bailey_Lab/projects/Lpueblana_genome01_10_16/PueblanaG-DNA-250bp_2.paired.fastq
+q=/raid2/labs/Bailey_Lab/projects/Lpueblana_genome01_10_16/PueblanaG-DNA-250bp_1.unpaired.fastq
+q=/raid2/labs/Bailey_Lab/projects/Lpueblana_genome01_10_16/PueblanaG-DNA-250bp_2.unpaired.fastq
+
+
+SGE_Batch:
+
+/raid2/labs/Bailey_Lab/programs/SOAPdenovo2-src-r240/SOAPdenovo-63mer all -s /raid2/labs/Bailey_Lab/projects/Lpueblana_genome01_10_16/soapconfig011116 -p 16 -K 63 -R -o /raid2/labs/Bailey_Lab/projects/Lpueblana_genome01_10_16/graph_prefix
+
+–m 400G 
+–P 15 
+–F 1000G 
+-q bailey 
+–r soapfullrun 
+–M dbailey@nmsu.edu
+
