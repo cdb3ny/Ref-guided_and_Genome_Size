@@ -1,0 +1,1886 @@
+#Run phylonetworks on the octopolyploids in Leucaena...
+#64core server
+
+#working directory starting point
+/media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny$ cd Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/
+
+
+###########Starting with L. confertiflora subsp. adeno 
+/media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.confertiflora-aden
+
+#first step, making an IQTree out of all loci for a reference
+#making the IQTREE species tree
+cd /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.confertiflora-aden/Polyploid_RAX_tree
+cp out.partitions.txt out.partitions.nex
+
+###manually inserted header and footer for nex format
+
+
+#fix the nexus formating in the partitions file
+sed 's/L.confertiflora-aden\/Polyploid_RAX_tree\/STRG\./charset part/g' out.partitions.nex | sed 's/\.1\.L\.confertiflora-aden\.fa//g' | sed -z 's/\n/;\n/g' | sed 's/;;/;/g' > out.partitions1.nex 
+
+#make single file of 24 locus trees
+cat ../RAxML_bipartitionsBranchLabels* > All_gene_trees.tre
+
+
+
+#Run IQTree
+iqtree -s ./out.phy -p out.partitions1.nex --prefix Leucaena_con_IQ -bb 1000 -nt AUTO
+
+#WARNING: Estimated model parameters are at boundary that can cause numerical instability!
+
+#Partition information was printed to Leucaena_con_IQ.best_model.nex
+#BEST SCORE FOUND : -10687899.756
+#Creating bootstrap support values...
+#Split supports printed to NEXUS file Leucaena_con_IQ.splits.nex
+#Total tree length: 0.309
+
+#Total number of iterations: 102
+#CPU time used for tree search: 34284.530 sec (9h:31m:24s)
+#Wall-clock time used for tree search: 6301.561 sec (1h:45m:1s)
+#Total CPU time used: 42091.797 sec (11h:41m:31s)
+#Total wall-clock time used: 7592.484 sec (2h:6m:32s)
+
+#Computing bootstrap consensus tree...
+#Reading input file Leucaena_con_IQ.splits.nex...
+#24 taxa and 45 splits.
+#Consensus tree written to Leucaena_con_IQ.contree
+#Reading input trees file Leucaena_con_IQ.contree
+#Log-likelihood of consensus tree: -10687899.754
+
+#Analysis results written to:
+  #IQ-TREE report:                Leucaena_con_IQ.iqtree
+  #Maximum-likelihood tree:       Leucaena_con_IQ.treefile
+  #Likelihood distances:          Leucaena_con_IQ.mldist
+
+#Ultrafast bootstrap approximation results written to:
+  #Split support values:          Leucaena_con_IQ.splits.nex
+  #Consensus tree:                Leucaena_con_IQ.contree
+  #Screen log file:               Leucaena_con_IQ.log
+
+#Date and Time: Mon Nov  6 00:11:10 2023
+
+
+
+
+##now need to make genetrees from iqtree for the analysis
+/media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.confertiflora-aden
+
+#shell script iqtree_gene-tree.sh
+for i in STRG.1000 #STRG.10015 STRG.10018 STRG.10023 STRG.10029 STRG.10066 STRG.10081 STRG.10087 STRG.10111 STRG.10136 STRG.1015 STRG.>
+do
+iqtree -s $i.1.24.L.confertiflora-aden.phy -m GTR+I+G --prefix IQtree.$i -nt 50
+done
+
+#counting results
+ll *.1.24.L.confertiflora-aden.phy
+2252 results
+
+#make combined IQtree file
+cat IQtree.STRG.*.treefile > IQtrees.combined.tre
+
+#now I can run snaq in Julia
+using PhyloNetworks
+using PhyloPlots
+using RCall
+using Distributed
+addprocs(60) # tells Julia to add 60 threads
+@everywhere using PhyloNetworks # tells these threads to load the PhyloNetworks package for themselves
+
+
+#load all the trees
+raxmlCF = readTrees2CF("IQtrees.combined.tre", writeTab=false, writeSummary=false)
+
+
+#ref tree IQtree_species_tree
+tre = readTopology("Polyploid_RAX_tree/Leucaena_con_IQ.treefile")
+
+#set it running
+net0 = snaq!(tre, raxmlCF, hmax=0, filename="Run1_0hmax_2252trees")
+
+
+####running 1 hybridization 11-11-23
+/media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.confertiflora-aden
+
+tre = readTopology("Run1_0hmax_2252trees.out")
+
+net1 = snaq!(tre, raxmlCF, hmax=1, filename="Run1_1hmax_2252trees")
+
+
+##finished - looking at the result 11/20/23
+#print trees
+tre = readTopology("Run1_0hmax_2252trees.out")
+
+R"pdf"("plot_Lcon-net0.pdf", width=14, height=14);
+plot(tre, :R);
+R"dev.off()"; 
+
+tre = readTopology("Run1_1hmax_2252trees.out")
+
+R"pdf"("plot_Lcon-net1.pdf", width=14, height=14);
+plot(tre, :R);
+R"dev.off()"; 
+
+
+
+
+
+###################################################################
+# starting with L. leucocephala subsp. glabrata
+
+
+#first step, making an IQTree out of all loci for a reference
+#making the IQTREE species tree
+
+cd /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.leucocephala-gla/Polyploid_RAX_tree
+
+cp ../../out.partitions.txt out.partitions.nex
+
+#manually inserted header and footer for nex format
+#nexus;
+begin sets;
+rows of data...
+end;;
+;
+
+
+#fix the nexus formating in the partitions file
+sed 's/L.leucocephala-gla\/Polyploid_RAX_tree\/STRG\./charset part/g' out.partitions.nex | sed 's/\.1\.L\.leucocephala-gla\.fa//g' | sed -z 's/\n/;\n/g' | sed 's/;;/;/g' > out.partitions1.nex 
+
+#make single file of 24 locus trees
+cat ../RAxML_bipartitionsBranchLabels* > All_gene_trees.tre
+
+
+#Run IQTree
+iqtree -s ./out.phy -p out.partitions1.nex --prefix Leucaena_leu_gla_IQ -bb 1000 -nt AUTO
+
+
+#WARNING: Estimated model parameters are at boundary that can cause numerical instability!
+
+#Partition information was printed to Leucaena_leu_gla_IQ.best_model.nex
+#BEST SCORE FOUND : -10702804.214
+#Creating bootstrap support values...
+#Split supports printed to NEXUS file Leucaena_leu_gla_IQ.splits.nex
+#Total tree length: 0.312
+
+#Total number of iterations: 102
+#CPU time used for tree search: 34104.062 sec (9h:28m:24s)
+#Wall-clock time used for tree search: 7259.532 sec (2h:0m:59s)
+#Total CPU time used: 41727.785 sec (11h:35m:27s)
+#Total wall-clock time used: 8714.736 sec (2h:25m:14s)
+
+#Computing bootstrap consensus tree...
+#Reading input file Leucaena_leu_gla_IQ.splits.nex...
+#24 taxa and 45 splits.
+#Consensus tree written to Leucaena_leu_gla_IQ.contree
+#Reading input trees file Leucaena_leu_gla_IQ.contree
+#Log-likelihood of consensus tree: -10702804.215
+
+#Analysis results written to:
+#  IQ-TREE report:                Leucaena_leu_gla_IQ.iqtree
+#  Maximum-likelihood tree:       Leucaena_leu_gla_IQ.treefile
+#  Likelihood distances:          Leucaena_leu_gla_IQ.mldist
+
+#Ultrafast bootstrap approximation results written to:
+#  Split support values:          Leucaena_leu_gla_IQ.splits.nex
+#  Consensus tree:                Leucaena_leu_gla_IQ.contree
+#  Screen log file:               Leucaena_leu_gla_IQ.log
+
+
+
+##now need to make genetrees from iqtree for the analysis
+cd /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.leucocephala-gla/
+
+./iqtree_gene-tree.sh
+#for i in STRG.1000 STRG.10015 STRG.10018 STRG.10023 STRG.10029 STRG.10066 STRG.10081 STRG.10087 STRG.10111 STRG.10136 STRG.1015 STRG.1>
+#do
+#iqtree -s $i.1.24.L.leucocephala-gla.phy -m GTR+I+G --prefix IQtree.$i -nt 50
+#done
+
+#counting results
+ll | grep treefile | wc -l
+2252
+
+#make combined IQtree file
+cat IQtree.STRG.*.treefile > IQtrees.combined.tre
+
+#2252 trees inside that file
+
+
+
+
+
+
+#now I can run snaq in Julia
+using PhyloNetworks
+using PhyloPlots
+using RCall
+using Distributed
+addprocs(60) # tells Julia to add 60 threads
+@everywhere using PhyloNetworks # tells these threads to load the PhyloNetworks package for themselves
+
+
+#load all the trees
+raxmlCF = readTrees2CF("IQtrees.combined.tre", writeTab=false, writeSummary=false)
+
+
+#ref tree IQtree_species_tree
+tre = readTopology("Polyploid_RAX_tree/Leucaena_leu_gla_IQ.contree")
+
+#set it running
+net0 = snaq!(tre, raxmlCF, hmax=0, filename="Run1_0hmax_2252trees")
+
+####running 1 hybridization 
+
+tre = readTopology("Run1_0hmax_2252trees.out")
+
+net1 = snaq!(tre, raxmlCF, hmax=1, filename="Run1_1hmax_2252trees")
+
+
+#print trees
+tre = readTopology("Run1_0hmax_2252trees.out")
+
+R"pdf"("plot_Lcon-net0.pdf", width=14, height=14);
+plot(tre, :R);
+R"dev.off()"; 
+
+tre = readTopology("Run1_1hmax_2252trees.out")
+
+R"pdf"("plot_Lcon-net1.pdf", width=14, height=14);
+plot(tre, :R);
+R"dev.off()";
+
+
+
+#####################################
+#Starting with L. pallida
+
+#first step, making an IQTree out of all loci for a reference
+#making the IQTREE species tree
+
+cd /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.pallida/Polyploid_RAX_tree
+
+cp out.partitions.txt out.partitions.nex
+
+#manually inserted header and footer for nex format
+#nexus;
+begin sets;
+rows of data...
+end;;
+;
+
+
+#fix the nexus formating in the partitions file
+sed 's/L.pallida\/Polyploid_RAX_tree\/STRG\./charset part/g' out.partitions.nex | sed 's/\.1\.L\.pallida\.fa//g' | sed -z 's/\n/;\n/g' | sed 's/;;/;/g' > out.partitions1.nex
+ 
+#definitely still working in /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.pallida/Polyploid_RAX_tree
+#make single file of 24 locus trees
+cat ../RAxML_bipartitionsBranchLabels* > All_gene_trees.tre
+##2252 genes!
+
+cd 
+#Run IQTree
+iqtree -s out.phy -p out.partitions1.nex --prefix Leucaena_pallida_IQ -bb 1000 -nt AUTO
+
+#WARNING: Estimated model parameters are at boundary that can cause numerical instability!
+
+#Partition information was printed to Leucaena_pallida_IQ.best_model.nex
+#BEST SCORE FOUND : -10685853.717
+#Creating bootstrap support values...
+#Split supports printed to NEXUS file Leucaena_pallida_IQ.splits.nex
+#Total tree length: 0.310
+
+#Total number of iterations: 102
+#CPU time used for tree search: 35815.822 sec (9h:56m:55s)
+#Wall-clock time used for tree search: 6778.098 sec (1h:52m:58s)
+#Total CPU time used: 43990.773 sec (12h:13m:10s)
+#Total wall-clock time used: 8130.277 sec (2h:15m:30s)
+
+#Computing bootstrap consensus tree...
+#Reading input file Leucaena_pallida_IQ.splits.nex...
+#24 taxa and 48 splits.
+#Consensus tree written to Leucaena_pallida_IQ.contree
+#Reading input trees file Leucaena_pallida_IQ.contree
+#Log-likelihood of consensus tree: -10685853.719
+
+#Analysis results written to:
+#  IQ-TREE report:                Leucaena_pallida_IQ.iqtree
+#  Maximum-likelihood tree:       Leucaena_pallida_IQ.treefile
+#  Likelihood distances:          Leucaena_pallida_IQ.mldist
+
+#Ultrafast bootstrap approximation results written to:
+#  Split support values:          Leucaena_pallida_IQ.splits.nex
+#  Consensus tree:                Leucaena_pallida_IQ.contree
+#  Screen log file:               Leucaena_pallida_IQ.log
+
+
+
+##now need to make genetrees from iqtree for the analysis
+
+cd /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.pallida
+
+cp ../L.leucocephala-gla/iqtree_gene-tree.sh .
+
+./iqtree_gene-tree.sh
+#for i in STRG.1000 STRG.10015 STRG.10018 STRG.10023 STRG.10029 STRG.10066 STRG.10081 STRG.10087 STRG.10111 STRG.10136 STRG.1015 STRG.1>
+#do
+#iqtree -s $i.1.24.L.pallida.phy -m GTR+I+G --prefix IQtree.$i -nt 50
+#done
+
+#counting results
+ll | grep treefile | wc -l
+2252
+
+#make combined IQtree file
+cat IQtree.STRG.*.treefile > IQtrees.combined.tre
+#2252 trees inside that file
+
+
+#now I can run snaq in Julia
+cd /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.pallida
+
+using PhyloNetworks
+using PhyloPlots
+using RCall
+using Distributed
+addprocs(60) # tells Julia to add 60 threads
+@everywhere using PhyloNetworks # tells these threads to load the PhyloNetworks package for themselves
+
+
+#load all the trees
+raxmlCF = readTrees2CF("IQtrees.combined.tre", writeTab=false, writeSummary=false)
+
+
+#ref tree IQtree_species_tree
+tre = readTopology("Polyploid_RAX_tree/Leucaena_pallida_IQ.contree")
+
+#set it running
+net0 = snaq!(tre, raxmlCF, hmax=0, filename="Run1_0hmax_2252trees")
+
+tre = readTopology("Run1_0hmax_2252trees.out")
+
+net1 = snaq!(tre, raxmlCF, hmax=1, filename="Run1_1hmax_2252trees")
+
+
+
+
+
+
+
+
+####running 1 hybridization 
+
+tre = readTopology("Run1_0hmax_2252trees.out")
+
+net1 = snaq!(tre, raxmlCF, hmax=1, filename="Run1_1hmax_2252trees")
+
+
+##finished - looking at the result 12/XXX/23
+
+#finished 12/12/23
+ 
+
+#print trees
+tre = readTopology("Run1_0hmax_2252trees.out")
+
+R"pdf"("plot_Lpallida-net0.pdf", width=14, height=14);
+plot(tre, :R);
+R"dev.off()"; 
+
+tre = readTopology("Run1_1hmax_2252trees.out")
+
+R"pdf"("plot_Lpallida-net1.pdf", width=14, height=14);
+plot(tre, :R);
+R"dev.off()";
+
+
+
+
+
+
+############################
+#repeating for L. diversifolia
+
+#first step, making an IQTree out of all loci for a reference
+#making the IQTREE species tree
+
+cd /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.diversifolia/Polyploid_RAX_tree
+
+cp out.partitions.txt out.partitions.nex
+
+#manually inserted header and footer for nex format
+#nexus;
+begin sets;
+rows of data...
+end;;
+;
+
+
+#fix the nexus formating in the partitions file
+sed 's/L.diversifolia\/Polyploid_RAX_tree\/STRG\./charset part/g' out.partitions.nex | sed 's/\.1\.L\.diversifolia\.fa//g' | sed -z 's/\n/;\n/g' | sed 's/;;/;/g' > out.partitions1.nex
+ 
+#definitely still working in /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.pallida/Polyploid_RAX_tree
+#make single file of 24 locus trees
+cat ../RAxML_bipartitionsBranchLabels* > All_gene_trees.tre
+##2252 genes!
+
+
+#Run IQTree - note naming error with L.pallida below
+iqtree -s out.phy -p out.partitions1.nex --prefix Leucaena_diversifolia_IQ -bb 1000 -nt 32
+
+#WARNING: Estimated model parameters are at boundary that can cause numerical instability!
+
+#Partition information was printed to Leucaena_diversifolia_IQ.best_model.nex
+#BEST SCORE FOUND : -10711539.028
+#Creating bootstrap support values...
+#Split supports printed to NEXUS file Leucaena_diversifolia_IQ.splits.nex
+#Total tree length: 0.311
+
+#Total number of iterations: 102
+#CPU time used for tree search: 157366.788 sec (43h:42m:46s)
+#Wall-clock time used for tree search: 6493.399 sec (1h:48m:13s)
+#Total CPU time used: 172478.231 sec (47h:54m:38s)
+#Total wall-clock time used: 7146.359 sec (1h:59m:6s)
+
+#Computing bootstrap consensus tree...
+#Reading input file Leucaena_diversifolia_IQ.splits.nex...
+#24 taxa and 45 splits.
+#Consensus tree written to Leucaena_diversifolia_IQ.contree
+#Reading input trees file Leucaena_diversifolia_IQ.contree
+#Log-likelihood of consensus tree: -10711539.028
+
+#Analysis results written to:
+#  IQ-TREE report:                Leucaena_diversifolia_IQ.iqtree
+#  Maximum-likelihood tree:       Leucaena_diversifolia_IQ.treefile
+#  Likelihood distances:          Leucaena_diversifolia_IQ.mldist
+
+#Ultrafast bootstrap approximation results written to:
+#  Split support values:          Leucaena_diversifolia_IQ.splits.nex
+#  Consensus tree:                Leucaena_diversifolia_IQ.contree
+#  Screen log file:               Leucaena_diversifolia_IQ.log
+
+
+
+
+##now need to make genetrees from iqtree for the analysis
+
+cd /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.diversifolia
+
+cp ../L.pallida/iqtree_gene-tree.sh .
+
+./iqtree_gene-tree.sh
+#for i in STRG.1000 STRG.10015 STRG.10018 STRG.10023 STRG.10029 STRG.10066 STRG.10081 STRG.10087 STRG.10111 STRG.10136 STRG.1015 STRG.1>
+#do
+#iqtree -s $i.1.24.L.diversifolia.phy -m GTR+I+G --prefix IQtree.$i -nt 50
+#done
+
+#counting results
+ll | grep treefile | wc -l
+2252
+
+#make combined IQtree file
+cat IQtree.STRG.*.treefile > IQtrees.combined.tre
+#2252 trees inside that file
+
+
+#now I can run snaq in Julia
+cd /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.diversifolia
+julia
+using PhyloNetworks
+using PhyloPlots
+using RCall
+using Distributed
+addprocs(60) # tells Julia to add 60 threads
+@everywhere using PhyloNetworks # tells these threads to load the PhyloNetworks package for themselves
+
+
+#load all the trees
+raxmlCF = readTrees2CF("IQtrees.combined.tre", writeTab=false, writeSummary=false)
+
+
+#ref tree IQtree_species_tree
+tre = readTopology("Polyploid_RAX_tree/Leucaena_diversifolia_IQ.contree")
+
+#set it running
+net0 = snaq!(tre, raxmlCF, hmax=0, filename="Run1_0hmax_2252trees")
+
+tre = readTopology("Run1_0hmax_2252trees.out")
+net1 = snaq!(tre, raxmlCF, hmax=1, filename="Run1_1hmax_2252trees")
+
+
+
+
+
+####running 1 hybridization 
+
+tre = readTopology("Run1_0hmax_2252trees.out")
+
+net1 = snaq!(tre, raxmlCF, hmax=1, filename="Run1_1hmax_2252trees")
+
+
+
+#print trees
+tre = readTopology("Run1_0hmax_2252trees.out")
+
+R"pdf"("plot_Ldiv-net0.pdf", width=14, height=14);
+plot(tre, :R);
+R"dev.off()"; 
+
+tre = readTopology("Run1_1hmax_2252trees.out")
+
+R"pdf"("plot_Ldiv-net1.pdf", width=14, height=14);
+plot(tre, :R);
+R"dev.off()"; 
+
+
+
+
+
+
+########################################
+#L. involucrata
+
+#first step, making an IQTree out of all loci for a reference
+#making the IQTREE species tree
+
+cd /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.involucrata/Polyploid_RAX_tree
+
+cp out.partitions.txt out.partitions.nex
+
+#manually inserted header and footer for nex format
+#nexus;
+begin sets;
+rows of data...
+end;;
+;
+
+
+#fix the nexus formating in the partitions file
+sed 's/L.involucrata\/Polyploid_RAX_tree\/STRG\./charset part/g' out.partitions.nex | sed 's/\.1\.L\.involucrata\.fa//g' | sed -z 's/\n/;\n/g' | sed 's/;;/;/g' > out.partitions1.nex
+ 
+
+#make single file of 24 locus trees
+cat ../RAxML_bipartitionsBranchLabels* > All_gene_trees.tre
+##2252 genes!
+
+
+#Run IQTree - note naming error with L.pallida below
+iqtree -s out.phy -p out.partitions1.nex --prefix Leucaena_involucrata_IQ -bb 1000 -nt 32
+
+#WARNING: Estimated model parameters are at boundary that can cause numerical instability!
+
+#Partition information was printed to Leucaena_involucrata_IQ.best_model.nex
+#BEST SCORE FOUND : -10705922.808
+#Creating bootstrap support values...
+#Split supports printed to NEXUS file Leucaena_involucrata_IQ.splits.nex
+#Total tree length: 0.311
+
+#Total number of iterations: 102
+#CPU time used for tree search: 159980.692 sec (44h:26m:20s)
+#Wall-clock time used for tree search: 6740.718 sec (1h:52m:20s)
+#Total CPU time used: 176473.413 sec (49h:1m:13s)
+#Total wall-clock time used: 7441.341 sec (2h:4m:1s)
+
+#Computing bootstrap consensus tree...
+#Reading input file Leucaena_involucrata_IQ.splits.nex...
+#24 taxa and 47 splits.
+#Consensus tree written to Leucaena_involucrata_IQ.contree
+#Reading input trees file Leucaena_involucrata_IQ.contree
+#Log-likelihood of consensus tree: -10705922.810
+
+#Analysis results written to:
+#  IQ-TREE report:                Leucaena_involucrata_IQ.iqtree
+#  Maximum-likelihood tree:       Leucaena_involucrata_IQ.treefile
+#  Likelihood distances:          Leucaena_involucrata_IQ.mldist
+#
+#Ultrafast bootstrap approximation results written to:
+#  Split support values:          Leucaena_involucrata_IQ.splits.nex
+#  Consensus tree:                Leucaena_involucrata_IQ.contree
+#  Screen log file:               Leucaena_involucrata_IQ.log
+
+
+##now need to make genetrees from iqtree for the analysis
+
+cd /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.involucrata
+
+cp ../L.pallida/iqtree_gene-tree.sh .
+
+#edit hrird line fo the bash script to match species name - 
+./iqtree_gene-tree.sh
+#for i in STRG.1000 STRG.10015 STRG.10018 STRG.10023 STRG.10029 STRG.10066 STRG.10081 STRG.10087 STRG.10111 STRG.10136 STRG.1015 STRG.1>
+#do
+#iqtree -s $i.1.24.L.involucrata.phy -m GTR+I+G --prefix IQtree.$i -nt 24
+#done
+
+#counting results
+ll | grep treefile | wc -l
+#2252
+
+#make combined IQtree file
+cat IQtree.STRG.*.treefile > IQtrees.combined.tre
+#2252 trees inside that file
+
+
+#now I can run snaq in Julia
+
+julia
+using PhyloNetworks
+using PhyloPlots
+using RCall
+using Distributed
+addprocs(60) # tells Julia to add 60 threads
+@everywhere using PhyloNetworks # tells these threads to load the PhyloNetworks package for themselves
+
+
+#load all the trees
+raxmlCF = readTrees2CF("IQtrees.combined.tre", writeTab=false, writeSummary=false)
+
+
+#ref tree IQtree_species_tree
+tre = readTopology("Polyploid_RAX_tree/Leucaena_involucrata_IQ.contree")
+
+#set it running
+net0 = snaq!(tre, raxmlCF, hmax=0, filename="Run1_0hmax_2252trees")
+tre = readTopology("Run1_0hmax_2252trees.out")
+net1 = snaq!(tre, raxmlCF, hmax=1, filename="Run1_1hmax_2252trees")
+
+
+
+
+
+#print trees
+tre = readTopology("Run1_0hmax_2252trees.out")
+
+R"pdf"("plot_L_invol-net0.pdf", width=14, height=14);
+plot(tre, :R);
+R"dev.off()"; 
+
+tre = readTopology("Run1_1hmax_2252trees.out")
+
+R"pdf"("plot_L_invol-net1.pdf", width=14, height=14);
+plot(tre, :R);
+R"dev.off()"; 
+
+
+
+
+
+
+##################################
+#L. leucocephala subsp. leuco
+
+#first step, making an IQTree out of all loci for a reference
+#making the IQTREE species tree
+
+cd /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.leucocephala.23b.3s/Polyploid_RAX_tree
+
+cp out.partitions.txt out.partitions.nex
+
+#manually inserted header and footer for nex format
+#nexus;
+begin sets;
+rows of data...
+end;;
+;
+
+
+#fix the nexus formating in the partitions file
+sed 's/L.leucocephala.23b.3s\/Polyploid_RAX_tree\/STRG\./charset part/g' out.partitions.nex | sed 's/\.1\.L\.leucocephala.23b.3s\.fa//g' | sed -z 's/\n/;\n/g' | sed 's/;;/;/g' > out.partitions1.nex
+ 
+
+#make single file of 24 locus trees
+cat ../RAxML_bipartitionsBranchLabels* > All_gene_trees.tre
+##2252 genes!
+
+
+#Run IQTree - note naming error with L.pallida below
+iqtree -s out.phy -p out.partitions1.nex --prefix Leucaena_leuco23b.3_IQ -bb 1000 -nt 32
+
+
+#WARNING: Estimated model parameters are at boundary that can cause numerical instability!
+
+#Partition information was printed to Leucaena_leuco23b.3_IQ.best_model.nex
+#BEST SCORE FOUND : -10701350.884
+#Creating bootstrap support values...
+#Split supports printed to NEXUS file Leucaena_leuco23b.3_IQ.splits.nex
+#Total tree length: 0.312
+
+#Total number of iterations: 102
+#CPU time used for tree search: 148440.846 sec (41h:14m:0s)
+#Wall-clock time used for tree search: 6178.013 sec (1h:42m:58s)
+#Total CPU time used: 162050.484 sec (45h:0m:50s)
+#Total wall-clock time used: 6787.812 sec (1h:53m:7s)
+
+#Computing bootstrap consensus tree...
+#Reading input file Leucaena_leuco23b.3_IQ.splits.nex...
+#24 taxa and 45 splits.
+#Consensus tree written to Leucaena_leuco23b.3_IQ.contree
+#Reading input trees file Leucaena_leuco23b.3_IQ.contree
+#Log-likelihood of consensus tree: -10701350.883
+
+#Analysis results written to:
+#  IQ-TREE report:                Leucaena_leuco23b.3_IQ.iqtree
+#  Maximum-likelihood tree:       Leucaena_leuco23b.3_IQ.treefile
+#  Likelihood distances:          Leucaena_leuco23b.3_IQ.mldist
+
+#Ultrafast bootstrap approximation results written to:
+#  Split support values:          Leucaena_leuco23b.3_IQ.splits.nex
+#  Consensus tree:                Leucaena_leuco23b.3_IQ.contree
+#  Screen log file:               Leucaena_leuco23b.3_IQ.log
+
+
+
+##now need to make genetrees from iqtree for the analysis
+
+cd /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.leucocephala.23b.3s
+
+cp ../L.pallida/iqtree_gene-tree.sh .
+
+#edit hrird line fo the bash script to match species name - 
+./iqtree_gene-tree.sh
+#for i in STRG.1000 STRG.10015 STRG.10018 STRG.10023 STRG.10029 STRG.10066 STRG.10081 STRG.10087 STRG.10111 STRG.10136 STRG.1015 STRG.1>
+#do
+#iqtree -s $i.1.24.L.leucocephala.23b.3s.phy -m GTR+I+G --prefix IQtree.$i -nt 60
+#done
+
+#counting results
+ll | grep treefile | wc -l
+#2252
+
+#make combined IQtree file
+cat IQtree.STRG.*.treefile > IQtrees.combined.tre
+#2252 trees inside that file
+
+
+#now I can run snaq in Julia
+
+julia
+using PhyloNetworks
+using PhyloPlots
+using RCall
+using Distributed
+addprocs(60) # tells Julia to add 60 threads
+@everywhere using PhyloNetworks # tells these threads to load the PhyloNetworks package for themselves
+
+
+#load all the trees
+raxmlCF = readTrees2CF("IQtrees.combined.tre", writeTab=false, writeSummary=false)
+
+#ref tree IQtree_species_tree
+tre = readTopology("Polyploid_RAX_tree/Leucaena_leuco23b.3_IQ.contree")
+
+#set it running
+net0 = snaq!(tre, raxmlCF, hmax=0, filename="Run1_0hmax_2252trees")
+
+tre = readTopology("Run1_0hmax_2252trees.out")
+net1 = snaq!(tre, raxmlCF, hmax=1, filename="Run1_1hmax_2252trees")
+
+
+#print trees
+tre = readTopology("Run1_0hmax_2252trees.out")
+
+R"pdf"("plot_L_leu23b-net0.pdf", width=14, height=14);
+plot(tre, :R);
+R"dev.off()"; 
+
+tre = readTopology("Run1_1hmax_2252trees.out")
+
+R"pdf"("plot_L_leu23b-net1.pdf", width=14, height=14);
+plot(tre, :R);
+R"dev.off()"; 
+
+
+
+
+
+
+
+
+
+############Now Running TICR TESTs###################### 
+#L. confertiflora
+###now running TICR tests for 0 vs 1 hybridization
+##workflow and requirements
+#Requires MrBayes gene trees... so first convert fasta alignments to nexus format with seqmagick after fixing names
+#create a single file of clustered nexus alignments
+#run mb.pl to generate bayesian tree
+#run bucky.pl to create the bucky output
+#make the plots from bucky output
+#run TICR test
+
+
+#starting with confertiflora
+cd /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.confertiflora-aden
+
+#convert *phy alignments to fasta then nexus. 
+
+#start the sh file
+ll *phy | grep -v uniq |  sed 's/ \+/\t/g' | cut -f9 | cut -f2 -d"." | sed -z 's/\n/ /g' > convert_to_nexus.sh
+
+#finish the sh file
+
+for i in 1000 10015 10018 10023 10029 10066 10081 10087 10111 10136 1015 10152 10188 10201 10208 10240 10316 10339 10364 10443 10458 10481 10492 10516 10586 10656 10670 10729 10733 10739 10772 10791 10792 10794 10823 10835 1085 10869 10>
+do
+#list the 24 aligned sequences, convert to fasta, remove last empty line, and put the > in for microlobius on the first line
+#check the polploid name each time for the correct spacing in the output file (see the tr command in the loop)
+tail -n24 STRG.$i.1.24.L.confertiflora-aden.phy | sed -z 's/\n/\n>/g' | sed 's/\t/\n/g' |  sed '$d' | sed 's/Mic/>Mic/g' > trash.fa
+seqmagick convert --output-format nexus --alphabet dna trash.fa STRG.$i.1.24.L.confertiflora-aden.nex
+rm trash.fa
+tr -d \'\" < STRG.$i.1.24.L.confertiflora-aden.nex | sed 's/-mac/-mac  /g' | sed 's/-ist/-ist  /g' | sed 's/aden/aden  /g' | sed 's/data/DATA/g' | sed 's/dimensions/Dimensions/g' | sed 's/ntax/NTAX/g' | sed 's/nchar/NCHAR/g' | sed 's/format/Format/g' | sed 's/DATAtype/DATATYPE/g' | sed 's/dna/DNA/g' | sed 's/missing/MISSING/g' | sed 's/gap/GAP/g' | sed 's/interleave/INTERLEAVE/g' | sed 's/matrix/Matrix/g' > STRG.$i.1.24.L.confertiflora-aden1.nex
+done
+
+
+##2252 nexus files
+
+#make new directory for this work
+mkdir TICR_test
+
+#move nex files to the TICR_test folder
+mv *nex TICR_test/
+
+cd /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.confertiflora-aden/TICR_test/
+
+
+#next we need to generate the bayesian trees. Coping over scripts and mbblock from the workshop file system
+#Subfolder structure
+mkdir Nexus_alignments/
+mv *nex Nexus_alignments/ 
+mkdir scripts/
+cp /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/23Locus_files/23Locus_matrix/Gene_trees/MrBayes_no_recombo/scripts/* scripts/
+
+
+
+#inside the Nexus_alignments folder create a tar.gz of alignment
+cd Nexus_alignments
+tar -czf Nex_alignments.tar.gz *.nex
+
+#I can look at the output without unzipping - 
+tar -tf Nex_alignments.tar.gz | wc -l
+#2252 results
+
+cd ../
+
+#ready to run need to convert this command ../scripts/mb.pl input/1_seqgen.tar.gz -m ../scripts/mbblock.txt -o mb-output
+mkdir mb-output
+
+scripts/mb.pl Nexus_alignments/Nex_alignments.tar.gz -m scripts/mbblock.txt -o mb-output
+
+#I can look at the output without unzipping - 
+tar -tf mb-output/Nex_alignments.mb.tar | wc -l
+#2250
+
+
+# now running the BUCKy without decompressing anything..
+
+scripts/bucky.pl mb-output/Nex_alignments.mb.tar -o bucky-output
+
+#Checking for BUCKy version >= 1.4.4...
+#  BUCKy version: 1.4.4.
+#  BUCKy version check passed.
+
+#Script was called as follows:
+#perl bucky.pl mb-output/Nex_alignments.mb.tar -o bucky-output
+
+#Found 24 taxa shared across all genes in this archive, 10626 of 10626 possible quartets will be run using output from 2250 total genes.
+#Summarizing MrBayes output for 2250 genes.
+#Job server successfully created.
+
+#  Analyses complete: 10626/10626.
+#  All connections closed.
+#Total execution time: 4 days, 1 hour, 47 seconds.
+
+
+
+###starting the plots for expected and observed Concordance factors as a visual measure of fit to trees (1 tree) vs networks (1-4 hybridizations).
+/media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/23Locus_files/23Locus_matrix/Gene_trees/MrBayes_no_recombo
+
+cd /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.confertiflora-aden/Run1_0hmax_2252trees.out
+
+
+
+cp /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.confertiflora-aden/Run1_0hmax_2252trees.out .
+cp /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.confertiflora-aden/Run1_1hmax_2252trees.out .
+
+
+
+
+#problem - somewhere in the bucky run, the csv file has been converted so that cuspidata is now cuspiDATA... needed to fix that manually
+sed 's/cuspiDATA/cuspidata/g' bucky-output/Nex_alignments.CFs.csv >bucky-output/Nex_alignments.CFs1.csv
+mv bucky-output/Nex_alignments.CFs1.csv bucky-output/Nex_alignments.CFs.csv
+
+#In Julia
+
+using PhyloNetworks
+using PhyloPlots
+using RCall
+using DataFrames
+using CSV
+
+
+####### Comparing 0 hybrids vs 1 hybrid
+
+buckyCF = readTableCF("bucky-output/Nex_alignments.CFs.csv") # read observed quartet CF
+
+#SNAQ tree estimated earlier in prior document... Botany2023 original
+net0b = readTopology("Run1_0hmax_2252trees.out") # tree estimated earlier with snaq!
+
+net1b = readTopology("Run1_1hmax_2252trees.out") # network estimated earlierw with one hybridization event
+
+
+topologyQPseudolik!(net0b, buckyCF)         # update the fitted CFs under net0
+
+
+
+fitCF0 = fittedQuartetCF(buckyCF, :long)    # extract them to a data frame
+topologyQPseudolik!(net1b, buckyCF)         # update the fitted CFs under net1
+fitCF1 = fittedQuartetCF(buckyCF, :long)    # extract them to a data frame
+
+#now combine CF0 and CF1
+fitCF = rename(fitCF0, :expCF => :expCF_net0); # rename column "expCF" to "expCF_net0"
+fitCF[!,:expCF_net1] = fitCF1[!,:expCF];         # add new column "expCF_net1"
+CSV.write("fittedCF.csv", fitCF)        # export to .csv file
+
+
+#
+fitCF0[:, :h] = zeros(Int64, size(fitCF0, 1))
+fitCF1[:, :h] = ones(Int64, size(fitCF1, 1))
+fitCF = vcat(fitCF0, fitCF1)
+fitCF
+
+
+@rlibrary ggplot2
+ggplot(fitCF, aes(x=:obsCF, y=:expCF)) + geom_point(alpha=0.1) +
+  xlab("CF observed in gene trees") + ylab("CF expected under tree (h=0) or network (h=1)") +
+  facet_grid(R"~h", labeller = label_both)
+ggsave("fittedCFs_con.png", height=4, width=7)
+
+##graphs look slightly better with H1
+#####running the TICR statistic
+# extracting the best tree from the phylonetworks trees
+ head -n 1 Run1_0hmax_2252trees.out > Run1_0hmax_2252trees.tre
+
+
+#####Running TICR with the ASTRAL species tree
+cp /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.confertiflora-aden/Phyparts1/Phyparts50/50perc.Astral.speciestree.tre .
+
+julia
+using QuartetNetworkGoodnessFit, CSV, PhyloPlots, PhyloNetworks, RCall, DataFrames, CSV
+df = DataFrame(CSV.File("bucky-output/Nex_alignments.CFs.csv"))
+dat = df[:,[1,2,3,4,5,8,11]]
+snaqtree = readTopology("50perc.Astral.speciestree.tre")
+rootatnode!(snaqtree,"Entada_abyssinica")
+plot(snaqtree,:R, showEdgeLength=true)
+out_Phylonet = ticr!(snaqtree,dat,false)
+out_Phylonet[1]
+#5.640291534043517e-86
+#significant
+
+
+
+########################
+####L. diversifolia
+###now running TICR tests for 0 vs 1 hybridization
+#workflow and requirements
+#Requires MrBayes gene trees... so first convert fasta alignments to nexus format with seqmagick after fixing names
+#create a single file of clustered nexus alignments
+#run mb.pl to generate bayesian tree
+#run bucky.pl to create the bucky output
+#make the plots from bucky output
+#run TICR test
+
+
+#starting with diversifolia
+cd /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.diversifolia
+
+#convert *phy alignments to fasta then nexus. 
+
+#start the sh file
+ll *phy | grep -v uniq |  sed 's/ \+/\t/g' | cut -f9 | cut -f2 -d"." | sed -z 's/\n/ /g' > convert_to_nexus.sh
+
+#finish the sh file
+
+for i in 1000 10015 10018 10023 10029 10066 10081 10087 10111 10136 1015 10152 10188 10201 10208 10240 10316 10339 10364 10443 10458 10481 10492 10516 10586 10656 10670 10729 10733 10739 10772 10791 10792 10794 10823 10835 1085 10869 10>
+do
+#list the 24 aligned sequences, convert to fasta, remove last empty line, and put the > in for microlobius on the first line
+#check the polploid name each time for the correct spacing in the output file (see the tr command in the loop)
+tail -n24 STRG.$i.1.24.L.diversifolia.phy | sed -z 's/\n/\n>/g' | sed 's/\t/\n/g' |  sed '$d' | sed 's/Mic/>Mic/g' > trash.fa
+seqmagick convert --output-format nexus --alphabet dna trash.fa STRG.$i.1.24.L.diversifolia.nex
+rm trash.fa
+tr -d \'\" < STRG.$i.1.24.L.diversifolia.nex | sed 's/-mac/-mac  /g' | sed 's/-ist/-ist  /g' | sed 's/aden/aden  /g' | sed 's/data/DATA/g' | sed 's/dimensions/Dimensions/g' | sed 's/ntax/NTAX/g' | sed 's/nchar/NCHAR/g' | sed 's/format/F>
+done
+
+##2252 nexus files
+
+#make new directory for this work
+mkdir TICR_test
+
+#move nex files to the TICR_test folder
+mv *nex TICR_test/
+
+cd /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.diversifolia/TICR_test/
+
+
+#next we need to generate the bayesian trees. Coping over scripts and mbblock from the workshop file system
+#Subfolder structure
+mkdir Nexus_alignments/
+mv *nex Nexus_alignments/
+mkdir scripts/
+cp /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/23Locus_files/23Locus_matrix/Gene_trees/MrBayes_no_recombo/scripts/* scripts/
+
+
+
+
+
+#inside the Nexus_alignments folder create a tar.gz of alignment
+cd Nexus_alignments
+tar -czf Nex_alignments.tar.gz *.nex
+
+#I can look at the output without unzipping - 
+tar -tf Nex_alignments.tar.gz | wc -l
+#2252 results
+
+cd ../
+
+#ready to run need to convert this command ../scripts/mb.pl input/1_seqgen.tar.gz -m ../scripts/mbblock.txt -o mb-output
+mkdir mb-output
+
+scripts/mb.pl Nexus_alignments/Nex_alignments.tar.gz -m scripts/mbblock.txt -o mb-output
+
+
+#I can look at the output without unzipping - 
+tar -tf mb-output/Nex_alignments.mb.tar | wc -l
+#2251
+
+
+# now running the BUCKy without decompressing anything..
+
+#scripts/bucky.pl mb-output/Nex_alignments.mb.tar -o bucky-output
+
+#Checking for BUCKy version >= 1.4.4...
+#  BUCKy version: 1.4.4.
+#  BUCKy version check passed.
+
+#Script was called as follows:
+#perl bucky.pl mb-output/Nex_alignments.mb.tar -o bucky-output
+
+#Found 24 taxa shared across all genes in this archive, 10626 of 10626 possible quartets will be run using output from 2251 total genes.
+#Summarizing MrBayes output for 2251 genes.
+#Job server successfully created.
+
+#  Analyses complete: 10626/10626.
+#  All connections closed.
+#Total execution time: 4 days, 2 hours, 46 minutes, 54 seconds.
+
+
+###starting the plots for expected and observed Concordance factors as a visual measure of fit to trees (1 tree) vs networks (1 hybridizations).
+
+cp /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.diversifolia/Run1_0hmax_2252trees.out .
+cp /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.diversifolia/Run1_1hmax_2252trees.out .
+
+
+
+
+#problem - somewhere in the bucky run, the csv file has been converted so that cuspidata is now cuspiDATA... need to fix that manually
+sed 's/cuspiDATA/cuspidata/g' bucky-output/Nex_alignments.CFs.csv > bucky-output/Nex_alignments.CFs1.csv
+mv bucky-output/Nex_alignments.CFs1.csv bucky-output/Nex_alignments.CFs.csv
+
+#In Julia
+
+using PhyloNetworks
+using PhyloPlots
+using RCall
+using DataFrames
+using CSV
+
+
+####### Comparing 0 hybrids vs 1 hybrid
+
+buckyCF = readTableCF("bucky-output/Nex_alignments.CFs.csv") # read observed quartet CF
+
+#SNAQ tree estimated earlier in prior document... Botany2023 original
+net0b = readTopology("Run1_0hmax_2252trees.out") # tree estimated earlier with snaq!
+
+net1b = readTopology("Run1_1hmax_2252trees.out") # network estimated earlierw with one hybridization event
+
+
+topologyQPseudolik!(net0b, buckyCF)         # update the fitted CFs under net0
+
+
+
+fitCF0 = fittedQuartetCF(buckyCF, :long)    # extract them to a data frame
+topologyQPseudolik!(net1b, buckyCF)         # update the fitted CFs under net1
+fitCF1 = fittedQuartetCF(buckyCF, :long)    # extract them to a data frame
+
+#now combine CF0 and CF1
+fitCF = rename(fitCF0, :expCF => :expCF_net0); # rename column "expCF" to "expCF_net0"
+fitCF[!,:expCF_net1] = fitCF1[!,:expCF];         # add new column "expCF_net1"
+CSV.write("fittedCF.csv", fitCF)        # export to .csv file
+
+
+#
+fitCF0[:, :h] = zeros(Int64, size(fitCF0, 1))
+fitCF1[:, :h] = ones(Int64, size(fitCF1, 1))
+fitCF = vcat(fitCF0, fitCF1)
+fitCF
+
+
+@rlibrary ggplot2
+ggplot(fitCF, aes(x=:obsCF, y=:expCF)) + geom_point(alpha=0.1) +
+  xlab("CF observed in gene trees") + ylab("CF expected under tree (h=0) or network (h=1)") +
+  facet_grid(R"~h", labeller = label_both)
+ggsave("fittedCFs_con.png", height=4, width=7)
+
+##graphs better with the h1
+
+#####running the TICR statistic with the Astral species tree
+
+cp /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.confertiflora-aden/Phyparts1/Phyparts50/50perc.Astral.speciestree.tre .
+
+julia
+using QuartetNetworkGoodnessFit, CSV, PhyloPlots, PhyloNetworks, RCall, DataFrames, CSV
+df = DataFrame(CSV.File("bucky-output/Nex_alignments.CFs.csv"))
+dat = df[:,[1,2,3,4,5,8,11]]
+snaqtree = readTopology("50perc.Astral.speciestree.tre")
+rootatnode!(snaqtree,"Entada_abyssinica")
+plot(snaqtree,:R, showEdgeLength=true)
+out_Phylonet = ticr!(snaqtree,dat,false)
+out_Phylonet[1]
+#1.1736808689734112e-23
+#significant 
+
+
+
+############TICR######################L. involucrata
+
+###now running TICR tests for 0 vs 1 hybridization
+#workflow and requirements
+#Requires MrBayes gene trees... so first convert fasta alignments to nexus format with seqmagick after fixing names
+#create a single file of clustered nexus alignments
+#run mb.pl to generate bayesian tree
+#run bucky.pl to create the bucky output
+#make the plots from bucky output
+#run TICR test
+
+
+#starting with diversifolia
+cd /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.involucrata
+
+#convert *phy alignments to fasta then nexus. 
+
+#start the sh file
+ll *phy | grep -v uniq |  sed 's/ \+/\t/g' | cut -f9 | cut -f2 -d"." | sed -z 's/\n/ /g' > convert_to_nexus.sh
+
+#finish the sh file
+
+for i in 1000 10015 10018 10023 10029 10066 10081 10087 10111 10136 1015 10152 10188 10201 10208 10240 10316 10339 10364 10443 10458 10481 10492 10516 10586 10656 10670 10729 10733 10739 10772 10791 10792 10794 10823 10835 1085 10869 10>
+do
+#list the 24 aligned sequences, convert to fasta, remove last empty line, and put the > in for microlobius on the first line
+#check the polploid name each time for the correct spacing in the output file (see the tr command in the loop)
+tail -n24 STRG.$i.1.24.L.involucrata.phy | sed -z 's/\n/\n>/g' | sed 's/\t/\n/g' |  sed '$d' | sed 's/Mic/>Mic/g' > trash.fa
+seqmagick convert --output-format nexus --alphabet dna trash.fa STRG.$i.1.24.L.involucrata.nex
+rm trash.fa
+tr -d \'\" < STRG.$i.1.24.L.involucrata.nex | sed 's/-mac/-mac  /g' | sed 's/-ist/-ist  /g' | sed 's/aden/aden  /g' | sed 's/data/DATA/g' | sed 's/dimensions/Dimensions/g' | sed 's/ntax/NTAX/g' | sed 's/nchar/NCHAR/g' | sed 's/format/Format/g' | sed 's/DATAtype/DATATYPE/g' | sed 's/dna/DNA/g' | sed 's/missing/MISSING/g' | sed 's/gap/GAP/g' | sed 's/interleave/INTERLEAVE/g' | sed 's/matrix/Matrix/g' > STRG.$i.1.24.L.involucrata.nex
+done
+
+##2252 nexus files
+
+#make new directory for this work
+mkdir TICR_test
+
+#move nex files to the TICR_test folder
+mv *nex TICR_test/
+
+cd /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.involucrata/TICR_test/
+
+
+#next we need to generate the bayesian trees. Coping over scripts and mbblock from the workshop file system
+#Subfolder structure
+mkdir Nexus_alignments/
+mv *nex Nexus_alignments/
+mkdir scripts/
+cp /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/23Locus_files/23Locus_matrix/Gene_trees/MrBayes_no_recombo/scripts/* scripts/
+
+
+
+
+
+#inside the Nexus_alignments folder create a tar.gz of alignment
+cd Nexus_alignments
+tar -czf Nex_alignments.tar.gz *.nex
+
+#I can look at the output without unzipping - 
+tar -tf Nex_alignments.tar.gz | wc -l
+#2252 results
+
+cd ../
+
+#ready to run need to convert this command ../scripts/mb.pl input/1_seqgen.tar.gz -m ../scripts/mbblock.txt -o mb-output
+mkdir mb-output
+
+scripts/mb.pl Nexus_alignments/Nex_alignments.tar.gz -m scripts/mbblock.txt -o mb-output
+
+
+#I can look at the output without unzipping - 
+tar -tf mb-output/Nex_alignments.mb.tar | wc -l
+#2250
+
+
+
+# now running the BUCKy without decompressing anything..
+
+#changed the number of threads in this version of the script to 58 max threads to avoid messing with mike's awk command.
+scripts/bucky_58.pl mb-output/Nex_alignments.mb.tar -o bucky-output
+
+#Checking for BUCKy version >= 1.4.4...
+#  BUCKy version: 1.4.4.
+#  BUCKy version check passed.
+
+#Script was called as follows:
+#perl bucky.pl mb-output/Nex_alignments.mb.tar -o bucky-output
+
+#^C(base) #cdb3ny@bailey64:/media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.involucrata/TICR_test#$ scripts/bucky_58.pl mb-output/Nex_alignments.mb.tar -o bucky-output
+
+#Checking for BUCKy version >= 1.4.4...
+#  BUCKy version: 1.4.4.
+#  BUCKy version check passed.
+
+#Script was called as follows:
+#perl bucky.pl mb-output/Nex_alignments.mb.tar -o bucky-output
+
+#Found 24 taxa shared across all genes in this archive, 10626 of 10626 possible quartets will be run using output from 2250 total genes.
+#Summarizing MrBayes output for 2250 genes.
+#Job server successfully created.
+
+#  Analyses complete: 10626/10626..
+#  All connections closed.
+#Total execution time: 4 days, 3 hours, 33 minutes, 54 seconds.
+
+
+
+###starting the plots for expected and observed Concordance factors as a visual measure of fit to trees (1 tree) vs networks (1 hybridizations).
+
+cp /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.involucrata/Run1_0hmax_2252trees.out .
+cp /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.involucrata/Run1_1hmax_2252trees.out .
+
+
+#problem - somewhere in the bucky run, the csv file has been converted so that cuspidata is now cuspiDATA... need to fix that manually
+sed 's/cuspiDATA/cuspidata/g' bucky-output/Nex_alignments.CFs.csv > bucky-output/Nex_alignments.CFs1.csv
+mv bucky-output/Nex_alignments.CFs1.csv bucky-output/Nex_alignments.CFs.csv
+
+julia
+using PhyloNetworks
+using PhyloPlots
+using RCall
+using DataFrames
+using CSV
+
+
+####### Comparing 0 hybrids vs 1 hybrid
+
+buckyCF = readTableCF("bucky-output/Nex_alignments.CFs.csv") # read observed quartet CF
+
+#SNAQ tree estimated earlier in prior document... Botany2023 original
+net0b = readTopology("Run1_0hmax_2252trees.out") # tree estimated earlier with snaq!
+
+net1b = readTopology("Run1_1hmax_2252trees.out") # network estimated earlierw with one hybridization event
+
+
+topologyQPseudolik!(net0b, buckyCF)         # update the fitted CFs under net0
+
+
+
+fitCF0 = fittedQuartetCF(buckyCF, :long)    # extract them to a data frame
+topologyQPseudolik!(net1b, buckyCF)         # update the fitted CFs under net1
+fitCF1 = fittedQuartetCF(buckyCF, :long)    # extract them to a data frame
+
+
+#now combine CF0 and CF1
+fitCF = rename(fitCF0, :expCF => :expCF_net0); # rename column "expCF" to "expCF_net0"
+fitCF[!,:expCF_net1] = fitCF1[!,:expCF];         # add new column "expCF_net1"
+CSV.write("fittedCF.csv", fitCF)        # export to .csv file
+
+
+#
+fitCF0[:, :h] = zeros(Int64, size(fitCF0, 1))
+fitCF1[:, :h] = ones(Int64, size(fitCF1, 1))
+fitCF = vcat(fitCF0, fitCF1)
+fitCF
+
+
+@rlibrary ggplot2
+ggplot(fitCF, aes(x=:obsCF, y=:expCF)) + geom_point(alpha=0.1) +
+  xlab("CF observed in gene trees") + ylab("CF expected under tree (h=0) or network (h=1)") +
+  facet_grid(R"~h", labeller = label_both)
+ggsave("fittedCFs_invol.png", height=4, width=7)
+
+##graphs better with the h1
+
+#####running the TICR statistic using the Astral tree
+cp /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.involucrata/Phyparts1/Phyparts50/50perc.Astral.speciestree.tre .
+
+julia
+using QuartetNetworkGoodnessFit, CSV, PhyloPlots, PhyloNetworks, RCall, DataFrames, CSV
+df = DataFrame(CSV.File("bucky-output/Nex_alignments.CFs.csv"))
+dat = df[:,[1,2,3,4,5,8,11]]
+snaqtree = readTopology("50perc.Astral.speciestree.tre")
+rootatnode!(snaqtree,"Entada_abyssinica")
+plot(snaqtree,:R, showEdgeLength=true)
+out_Phylonet = ticr!(snaqtree,dat,false)
+out_Phylonet[1]
+0.16704941666991123
+#not significant when comparing astral to the network...
+
+
+
+
+############TICR##########################L. leuco gla
+
+##now running TICR tests for 0 vs 1 hybridization
+#workflow and requirements
+#Requires MrBayes gene trees... so first convert fasta alignments to nexus format with seqmagick after fixing names
+#create a single file of clustered nexus alignments
+#run mb.pl to generate bayesian tree
+#run bucky.pl to create the bucky output
+#make the plots from bucky output
+#run TICR test
+
+
+#L.leuco gla
+cd /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.leucocephala-gla/
+
+#convert *phy alignments to fasta then nexus. 
+
+#start the sh file
+ll *phy | grep -v uniq |  sed 's/ \+/\t/g' | cut -f9 | cut -f2 -d"." | sed -z 's/\n/ /g' > convert_to_nexus.sh
+
+#finish the sh file
+
+for i in ....
+do
+#list the 24 aligned sequences, convert to fasta, remove last empty line, and put the > in for microlobius on the first line
+#check the polploid name each time for the correct spacing in the output file (see the tr command in the loop)
+tail -n24 STRG.$i.1.24.L.leucocephala-gla.phy | sed -z 's/\n/\n>/g' | sed 's/\t/\n/g' |  sed '$d' | sed 's/Mic/>Mic/g' > trash.fa
+seqmagick convert --output-format nexus --alphabet dna trash.fa STRG.$i.1.24.L.leucocephala-gla.nex
+rm trash.fa
+tr -d \'\" < STRG.$i.1.24.L.leucocephala-gla.nex | sed 's/-mac/-mac  /g' | sed 's/-ist/-ist  /g' | sed 's/aden/aden  /g' | sed 's/data/DATA/g' | sed 's/dimensions/Dimensions/g' | sed 's/ntax/NTAX/g' | sed 's/nchar/NCHAR/g' | sed 's/format/Format/g' | sed 's/DATAtype/DATATYPE/g' | sed 's/dna/DNA/g' | sed 's/missing/MISSING/g' | sed 's/gap/GAP/g' | sed 's/interleave/INTERLEAVE/g' | sed 's/matrix/Matrix/g' > STRG.$i.1.24.L.leucocephala-gla.nex
+done
+
+##2252 nexus files
+
+#make new directory for this work
+mkdir TICR_test
+
+#move nex files to the TICR_test folder
+mv *nex TICR_test/
+
+cd /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.leucocephala-gla/TICR_test/
+
+
+#next we need to generate the bayesian trees. Coping over scripts and mbblock from the workshop file system
+#Subfolder structure
+mkdir Nexus_alignments/
+mv *nex Nexus_alignments/
+mkdir scripts/
+cp /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/23Locus_files/23Locus_matrix/Gene_trees/MrBayes_no_recombo/scripts/* scripts/
+
+#inside the Nexus_alignments folder create a tar.gz of alignment
+cd Nexus_alignments
+tar -czf Nex_alignments.tar.gz *.nex
+
+#I can look at the output without unzipping - 
+tar -tf Nex_alignments.tar.gz | wc -l
+#2252 results
+
+cd ../
+
+#ready to run need to convert this command ../scripts/mb.pl input/1_seqgen.tar.gz -m ../scripts/mbblock.txt -o mb-output
+mkdir mb-output
+
+scripts/mb.pl Nexus_alignments/Nex_alignments.tar.gz -m scripts/mbblock.txt -o mb-output
+
+
+#I can look at the output without unzipping - 
+tar -tf mb-output/Nex_alignments.mb.tar | wc -l
+#2250
+
+
+
+# now running the BUCKy without decompressing anything..
+
+scripts/bucky.pl mb-output/Nex_alignments.mb.tar -o bucky-output
+
+#Checking for BUCKy version >= 1.4.4...
+ # BUCKy version: 1.4.4.
+  #BUCKy version check passed.
+
+#Script was called as follows:
+#perl bucky.pl mb-output/Nex_alignments.mb.tar -o bucky-output
+
+#Found 24 taxa shared across all genes in this archive, 10626 of 10626 possible quartets will be run using output from 2250 total genes.
+#Summarizing MrBayes output for 2250 genes.
+#Job server successfully created.
+
+#  Analyses complete: 10626/10626.
+#  All connections closed.
+#Total execution time: 3 days, 23 hours, 55 minutes, 20 seconds.
+
+###starting the plots for expected and observed Concordance factors as a visual measure of fit to trees (1 tree) vs networks (1 hybridizations).
+
+cp /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.leucocephala-gla/Run1_0hmax_2252trees.out .
+cp /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.leucocephala-gla/Run1_1hmax_2252trees.out .
+
+
+#problem - somewhere in the bucky run, the csv file has been converted so that cuspidata is now cuspiDATA... need to fix that manually
+sed 's/cuspiDATA/cuspidata/g' bucky-output/Nex_alignments.CFs.csv > bucky-output/Nex_alignments.CFs1.csv
+mv bucky-output/Nex_alignments.CFs1.csv bucky-output/Nex_alignments.CFs.csv
+
+julia
+using PhyloNetworks
+using PhyloPlots
+using RCall
+using DataFrames
+using CSV
+
+
+####### Comparing 0 hybrids vs 1 hybrid
+
+buckyCF = readTableCF("bucky-output/Nex_alignments.CFs.csv") # read observed quartet CF
+
+#SNAQ tree estimated earlier in prior document... Botany2023 original
+net0b = readTopology("Run1_0hmax_2252trees.out") # tree estimated earlier with snaq!
+
+net1b = readTopology("Run1_1hmax_2252trees.out") # network estimated earlierw with one hybridization event
+
+
+topologyQPseudolik!(net0b, buckyCF)         # update the fitted CFs under net0
+
+
+
+fitCF0 = fittedQuartetCF(buckyCF, :long)    # extract them to a data frame
+topologyQPseudolik!(net1b, buckyCF)         # update the fitted CFs under net1
+fitCF1 = fittedQuartetCF(buckyCF, :long)    # extract them to a data frame
+
+
+#now combine CF0 and CF1
+fitCF = rename(fitCF0, :expCF => :expCF_net0); # rename column "expCF" to "expCF_net0"
+fitCF[!,:expCF_net1] = fitCF1[!,:expCF];         # add new column "expCF_net1"
+CSV.write("fittedCF.csv", fitCF)        # export to .csv file
+
+
+#
+fitCF0[:, :h] = zeros(Int64, size(fitCF0, 1))
+fitCF1[:, :h] = ones(Int64, size(fitCF1, 1))
+fitCF = vcat(fitCF0, fitCF1)
+fitCF
+
+
+@rlibrary ggplot2
+ggplot(fitCF, aes(x=:obsCF, y=:expCF)) + geom_point(alpha=0.1) +
+  xlab("CF observed in gene trees") + ylab("CF expected under tree (h=0) or network (h=1)") +
+  facet_grid(R"~h", labeller = label_both)
+ggsave("fittedCFs_Leu_leu-gla.png", height=4, width=7)
+
+##graphs better with the h1
+
+exit()
+
+
+#####running the TICR statistic with the astral species tree
+cp /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.leucocephala-gla/Phyparts1/Phyparts50/50perc.Astral.speciestree.tre .
+
+julia
+using QuartetNetworkGoodnessFit, CSV, PhyloPlots, PhyloNetworks, RCall, DataFrames, CSV
+df = DataFrame(CSV.File("bucky-output/Nex_alignments.CFs.csv"))
+dat = df[:,[1,2,3,4,5,8,11]]
+snaqtree = readTopology("50perc.Astral.speciestree.tre")
+rootatnode!(snaqtree,"Entada_abyssinica")
+plot(snaqtree,:R, showEdgeLength=true)
+out_Phylonet = ticr!(snaqtree,dat,false)
+out_Phylonet[1]
+#3.772230953218089e-96
+#significant
+
+
+
+
+
+
+############TICR##########################L. pallida
+
+##now running TICR tests for 0 vs 1 hybridization
+#workflow and requirements
+#Requires MrBayes gene trees... so first convert fasta alignments to nexus format with seqmagick after fixing names
+#create a single file of clustered nexus alignments
+#run mb.pl to generate bayesian tree
+#run bucky.pl to create the bucky output
+#make the plots from bucky output
+#run TICR test
+
+
+#L.pallida
+cd /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.pallida/
+
+#convert *phy alignments to fasta then nexus. 
+
+#start the sh file
+ll *phy | grep -v uniq |  sed 's/ \+/\t/g' | cut -f9 | cut -f2 -d"." | sed -z 's/\n/ /g' > convert_to_nexus.sh
+
+#finish the sh file
+
+for i in ....
+do
+#list the 24 aligned sequences, convert to fasta, remove last empty line, and put the > in for microlobius on the first line
+#check the polploid name each time for the correct spacing in the output file (see the tr command in the loop)
+tail -n24 STRG.$i.1.24.L.pallida.phy | sed -z 's/\n/\n>/g' | sed 's/\t/\n/g' |  sed '$d' | sed 's/Mic/>Mic/g' > trash.fa
+seqmagick convert --output-format nexus --alphabet dna trash.fa STRG.$i.1.24.L.pallida.nex
+rm trash.fa
+tr -d \'\" < STRG.$i.1.24.L.pallida.nex | sed 's/-mac/-mac  /g' | sed 's/-ist/-ist  /g' | sed 's/aden/aden  /g' | sed 's/data/DATA/g' | sed 's/dimensions/Dimensions/g' | sed 's/ntax/NTAX/g' | sed 's/nchar/NCHAR/g' | sed 's/format/Format/g' | sed 's/DATAtype/DATATYPE/g' | sed 's/dna/DNA/g' | sed 's/missing/MISSING/g' | sed 's/gap/GAP/g' | sed 's/interleave/INTERLEAVE/g' | sed 's/matrix/Matrix/g' > STRG.$i.1.24.L.pallida.nex
+done
+
+##2252 nexus files
+
+#make new directory for this work
+mkdir TICR_test
+
+#move nex files to the TICR_test folder
+mv *nex TICR_test/
+
+cd /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.pallida/TICR_test/
+
+
+#next we need to generate the bayesian trees. Coping over scripts and mbblock from the workshop file system
+#Subfolder structure
+mkdir Nexus_alignments/
+mv *nex Nexus_alignments/
+mkdir scripts/
+cp /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/23Locus_files/23Locus_matrix/Gene_trees/MrBayes_no_recombo/scripts/* scripts/
+
+#inside the Nexus_alignments folder create a tar.gz of alignment
+cd Nexus_alignments
+tar -czf Nex_alignments.tar.gz *.nex
+
+#I can look at the output without unzipping - 
+tar -tf Nex_alignments.tar.gz | wc -l
+#2252 results
+
+cd ../
+
+#ready to run need to convert this command ../scripts/mb.pl input/1_seqgen.tar.gz -m ../scripts/mbblock.txt -o mb-output
+mkdir mb-output
+
+#running into a permissions issue with the command below (didn't happen with earlier species...). need to run this as ROOT sign in for some reason!
+
+scripts/mb.pl Nexus_alignments/Nex_alignments.tar.gz -m scripts/mbblock.txt -o mb-output
+
+
+
+#I can look at the output without unzipping - 
+tar -tf mb-output/Nex_alignments.mb.tar | wc -l
+#2249
+
+exit #stop being root
+# now running the BUCKy without decompressing anything..
+## due to server errors this had to be run on the Bailey_server 32core. 
+pwd
+#/media/CLG2018/Donovan/TICR_extra_analysis/L.pallida
+
+scripts/bucky.pl mb-output/Nex_alignments.mb.tar -o bucky-output
+
+#Checking for BUCKy version >= 1.4.4...
+#  BUCKy version: 1.4.4.
+  #BUCKy version check passed.
+
+#Script was called as follows:
+#perl bucky.pl mb-output/Nex_alignments.mb.tar -o bucky-output
+
+#Found 24 taxa shared across all genes in this archive, 10626 of 10626 possible quartets will be run using output from 2249 total genes.
+#Summarizing MrBayes output for 2249 genes.
+#Job server successfully created.
+
+#  Analyses complete: 10626/10626../10626.
+#  All connections closed.
+#Total execution time: 14 days, 7 hours, 27 minutes, 1 second.
+
+
+#Now I need to move the bucky results back to the 64 core server
+cd /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.pallida/
+
+rsync -arvz -e 'ssh -p 222' cdb3ny@128.123.95.162:/media/CLG2018/Donovan/TICR_extra_analysis/L.pallida/bu* .
+
+###starting the plots for expected and observed Concordance factors as a visual measure of fit to trees (1 tree) vs networks (1 hybridizations).
+
+cp /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.pallida/Run1_0hmax_2252trees.out .
+cp /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.pallida/Run1_1hmax_2252trees.out .
+
+
+#problem - somewhere in the bucky run, the csv file has been converted so that cuspidata is now cuspiDATA... need to fix that manually
+sed 's/cuspiDATA/cuspidata/g' bucky-output/Nex_alignments.CFs.csv > bucky-output/Nex_alignments.CFs1.csv
+mv bucky-output/Nex_alignments.CFs1.csv bucky-output/Nex_alignments.CFs.csv
+
+julia
+using PhyloNetworks
+using PhyloPlots
+using RCall
+using DataFrames
+using CSV
+
+
+####### Comparing 0 hybrids vs 1 hybrid
+
+buckyCF = readTableCF("bucky-output/Nex_alignments.CFs.csv") # read observed quartet CF
+
+#SNAQ tree estimated earlier in prior document... Botany2023 original
+net0b = readTopology("Run1_0hmax_2252trees.out") # tree estimated earlier with snaq!
+
+net1b = readTopology("Run1_1hmax_2252trees.out") # network estimated earlierw with one hybridization event
+
+
+topologyQPseudolik!(net0b, buckyCF)         # update the fitted CFs under net0
+
+
+
+fitCF0 = fittedQuartetCF(buckyCF, :long)    # extract them to a data frame
+topologyQPseudolik!(net1b, buckyCF)         # update the fitted CFs under net1
+fitCF1 = fittedQuartetCF(buckyCF, :long)    # extract them to a data frame
+
+
+#now combine CF0 and CF1
+fitCF = rename(fitCF0, :expCF => :expCF_net0); # rename column "expCF" to "expCF_net0"
+fitCF[!,:expCF_net1] = fitCF1[!,:expCF];         # add new column "expCF_net1"
+CSV.write("fittedCF.csv", fitCF)        # export to .csv file
+
+
+#
+fitCF0[:, :h] = zeros(Int64, size(fitCF0, 1))
+fitCF1[:, :h] = ones(Int64, size(fitCF1, 1))
+fitCF = vcat(fitCF0, fitCF1)
+fitCF
+
+
+@rlibrary ggplot2
+ggplot(fitCF, aes(x=:obsCF, y=:expCF)) + geom_point(alpha=0.1) +
+  xlab("CF observed in gene trees") + ylab("CF expected under tree (h=0) or network (h=1)") +
+  facet_grid(R"~h", labeller = label_both)
+ggsave("fittedCFs_Leu_pall.png", height=4, width=7)
+
+##graphs better with the h1
+
+
+
+exit()
+
+#####Running TICR with the Astral Species Tree
+cp /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.pallida/Phyparts1/Phyparts50/50perc.Astral.speciestree.tre .
+
+julia
+using QuartetNetworkGoodnessFit, CSV, PhyloPlots, PhyloNetworks, RCall, DataFrames, CSV
+df = DataFrame(CSV.File("bucky-output/Nex_alignments.CFs.csv"))
+dat = df[:,[1,2,3,4,5,8,11]]
+snaqtree = readTopology("50perc.Astral.speciestree.tre")
+rootatnode!(snaqtree,"Entada_abyssinica")
+plot(snaqtree,:R, showEdgeLength=true)
+out_Phylonet = ticr!(snaqtree,dat,false)
+out_Phylonet[1]
+#0.25645504962459204
+
+
+
+
+
+
+
+
+################################
+############TICR###################### 
+####L. leucocephala leucocephala
+###now running TICR tests for 0 vs 1 hybridization
+#workflow and requirements
+#Requires MrBayes gene trees... so first convert fasta alignments to nexus format with seqmagick after fixing names
+#create a single file of clustered nexus alignments
+#run mb.pl to generate bayesian tree
+#run bucky.pl to create the bucky output
+#make the plots from bucky output
+#run TICR test
+
+
+#L.leuco leuco
+cd /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.leucocephala.23b.3s
+
+#convert *phy alignments to fasta then nexus. 
+
+#start the sh file
+ll *phy | grep -v uniq |  sed 's/ \+/\t/g' | cut -f9 | cut -f2 -d"." | sed -z 's/\n/ /g' > convert_to_nexus.sh
+
+#finish the sh file
+
+for i in ....
+do
+#list the 24 aligned sequences, convert to fasta, remove last empty line, and put the > in for microlobius on the first line
+#check the polploid name each time for the correct spacing in the output file (see the tr command in the loop)
+tail -n24 STRG.$i.1.24.L.leucocephala.23b.3s.phy | sed -z 's/\n/\n>/g' | sed 's/\t/\n/g' |  sed '$d' | sed 's/Mic/>Mic/g' > trash.fa
+seqmagick convert --output-format nexus --alphabet dna trash.fa STRG.$i.1.24.L.leucocephala.23b.3s.nex
+rm trash.fa
+tr -d \'\" < STRG.$i.1.24.L.leucocephala.23b.3s.nex | sed 's/-mac/-mac  /g' | sed 's/-ist/-ist  /g' | sed 's/aden/aden  /g' | sed 's/data/DATA/g' | sed 's/dimensions/Dimensions/g' | sed 's/ntax/NTAX/g' | sed 's/nchar/NCHAR/g' | sed 's/format/Format/g' | sed 's/DATAtype/DATATYPE/g' | sed 's/dna/DNA/g' | sed 's/missing/MISSING/g' | sed 's/gap/GAP/g' | sed 's/interleave/INTERLEAVE/g' | sed 's/matrix/Matrix/g' > STRG.$i.1.24.L.leucocephala.23b.3s.nex
+done
+
+
+##2252 nexus files
+
+#make new directory for this work
+mkdir TICR_test
+
+#move nex files to the TICR_test folder
+mv *nex TICR_test/
+
+cd /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.leucocephala.23b.3s/TICR_test/
+
+
+#next we need to generate the bayesian trees. Coping over scripts and mbblock from the workshop file system
+#Subfolder structure
+mkdir Nexus_alignments/
+mv *nex Nexus_alignments/
+mkdir scripts/
+cp /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/23Locus_files/23Locus_matrix/Gene_trees/MrBayes_no_recombo/scripts/* scripts/
+
+#inside the Nexus_alignments folder create a tar.gz of alignment
+cd Nexus_alignments
+tar -czf Nex_alignments.tar.gz *.nex
+
+#I can look at the output without unzipping - 
+tar -tf Nex_alignments.tar.gz | wc -l
+#2252 results
+
+cd ../
+
+#ready to run need to convert this command ../scripts/mb.pl input/1_seqgen.tar.gz -m ../scripts/mbblock.txt -o mb-output
+mkdir mb-output
+
+#running into a permissions issue with the command below (didn't happen with earlier species...). needed to switch to the old teaching server..
+
+cd /media/CLG2018/Donovan/TICR_extra_analysis/L.leu.leu/TICR_test
+rsync -arvz -e 'ssh -p 45679' cdb3ny@128.123.95.199:/media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.leucocephala.23b.3s/TICR_tes* .
+
+
+scripts/mb.pl Nexus_alignments/Nex_alignments.tar.gz -m scripts/mbblock.txt -o mb-output
+
+
+
+#I can look at the output without unzipping - 
+tar -tf mb-output/Nex_alignments.mb.tar | wc -l
+2251
+
+
+# now running the BUCKy without decompressing anything..
+## due to server errors this had to be run on the Bailey_server 32core. 
+pwd
+/media/CLG2018/Donovan/TICR_extra_analysis/L.leu.leu/TICR_test
+
+scripts/bucky.pl mb-output/Nex_alignments.mb.tar -o bucky-output
+
+
+
+
+
+#Checking for BUCKy version >= 1.4.4...
+#  BUCKy version: 1.4.4.
+  #BUCKy version check passed.
+
+#Script was called as follows:
+#perl bucky.pl mb-output/Nex_alignments.mb.tar -o bucky-output
+
+#Found 24 taxa shared across all genes in this archive, 10626 of 10626 possible quartets will be run using output from 2249 total genes.
+#Summarizing MrBayes output for 2249 genes.
+#Job server successfully created.
+
+#  Analyses complete: 10626/10626../10626.
+#  All connections closed.
+#Total execution time: 14 days, 7 hours, 27 minutes, 1 second.
+
+
+#Now I need to move the bucky results back to the 64 core server
+cd /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.leucocephala.23b.3s/TICR_test
+
+rsync -arvz -e 'ssh -p 222' cdb3ny@128.123.95.162:/media/CLG2018/Donovan/TICR_extra_analysis/L.leu.leu/TICR_test/bu* .
+
+###starting the plots for expected and observed Concordance factors as a visual measure of fit to trees (1 tree) vs networks (1 hybridizations).
+
+
+
+
+cp /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.leucocephala.23b.3s/Run1_0hmax_2252trees.out .
+cp /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.leucocephala.23b.3s/Run1_1hmax_2252trees.out .
+
+
+#problem - somewhere in the bucky run, the csv file has been converted so that cuspidata is now cuspiDATA... need to fix that manually
+sed 's/cuspiDATA/cuspidata/g' bucky-output/Nex_alignments.CFs.csv > bucky-output/Nex_alignments.CFs1.csv
+mv bucky-output/Nex_alignments.CFs1.csv bucky-output/Nex_alignments.CFs.csv
+
+julia
+using PhyloNetworks
+using PhyloPlots
+using RCall
+using DataFrames
+using CSV
+
+
+####### Comparing 0 hybrids vs 1 hybrid
+
+buckyCF = readTableCF("bucky-output/Nex_alignments.CFs.csv") # read observed quartet CF
+
+#SNAQ tree estimated earlier in prior document... Botany2023 original
+net0b = readTopology("Run1_0hmax_2252trees.out") # tree estimated earlier with snaq!
+
+net1b = readTopology("Run1_1hmax_2252trees.out") # network estimated earlierw with one hybridization event
+
+
+topologyQPseudolik!(net0b, buckyCF)         # update the fitted CFs under net0
+
+
+
+fitCF0 = fittedQuartetCF(buckyCF, :long)    # extract them to a data frame
+topologyQPseudolik!(net1b, buckyCF)         # update the fitted CFs under net1
+fitCF1 = fittedQuartetCF(buckyCF, :long)    # extract them to a data frame
+
+
+#now combine CF0 and CF1
+fitCF = rename(fitCF0, :expCF => :expCF_net0); # rename column "expCF" to "expCF_net0"
+fitCF[!,:expCF_net1] = fitCF1[!,:expCF];         # add new column "expCF_net1"
+CSV.write("fittedCF.csv", fitCF)        # export to .csv file
+
+
+#
+fitCF0[:, :h] = zeros(Int64, size(fitCF0, 1))
+fitCF1[:, :h] = ones(Int64, size(fitCF1, 1))
+fitCF = vcat(fitCF0, fitCF1)
+fitCF
+
+
+@rlibrary ggplot2
+ggplot(fitCF, aes(x=:obsCF, y=:expCF)) + geom_point(alpha=0.1) +
+  xlab("CF observed in gene trees") + ylab("CF expected under tree (h=0) or network (h=1)") +
+  facet_grid(R"~h", labeller = label_both)
+ggsave("fittedCFs_Leu_leu_leu.png", height=4, width=7)
+
+##graphs better with the h1
+
+
+
+exit()
+#####running the TICR statistic using the Astral tree
+
+cp /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/L.leucocephala.23b.3s/Phyparts1/Phyparts50/50perc.Astral.speciestree.tre .
+
+julia
+using QuartetNetworkGoodnessFit, CSV, PhyloPlots, PhyloNetworks, RCall, DataFrames, CSV
+df = DataFrame(CSV.File("bucky-output/Nex_alignments.CFs.csv"))
+dat = df[:,[1,2,3,4,5,8,11]]
+snaqtree = readTopology("50perc.Astral.speciestree.tre")
+rootatnode!(snaqtree,"Entada_abyssinica")
+plot(snaqtree,:R, showEdgeLength=true)
+out_Phylonet = ticr!(snaqtree,dat,false)
+out_Phylonet[1]
+#5.0207188998047815e-129
+#significant
+
+
+
