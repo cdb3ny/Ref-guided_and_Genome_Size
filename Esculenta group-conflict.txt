@@ -1,0 +1,297 @@
+### Code associated with the assesement of gene tree conflict within the Esculenta group (Clade 2)
+
+
+#In the Esculenta group notice this is the only clade with massive conflict among gene trees (the green band in the pie chart is nearly as large as the blue).  Initially I thought this would mean hybridization... (ie, one clear conflicting signal - not many alternative conflicting signals).  To check this we quantified the number of trees with >50% bootstrap support for the following possible resolutions - (pueb,mat)esc versus (pueb,esc)mat versus (mat,esc)pueb.  
+
+#The following was used to identify loci supporting each resolution and to plot the distribution of loci.
+
+#this was done with nodes <50% BS collapsed in gene trees.  Looking for well supported nodes.
+
+## starting data directory:
+/media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/23Locus_files/23Locus_matrix/Gene_trees/Phyparts1
+
+##output directory will be 
+/media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/23Locus_files/23Locus_matrix/Gene_trees/Phyparts1/Esculenta_investigation/
+
+
+#Recover list of STRG names 
+ll ../ | grep "RAxML_bipartitions.STRG" | cut -f14 -d " " | cut -f2-3 -d"." > z-STRG_list.txt
+
+tr '/n' ' ' < z-STRG_list.txt
+
+
+
+for locus in STRG.9937 all
+do
+sed 's/[0-9]//g' $locus.50perc.tre | sed 's/:.//g' | grep "(L.matudae,L.esculenta)" > Esculenta_investigation/mat_esc1.$locus.tre
+sed 's/[0-9]//g' $locus.50perc.tre | sed 's/:.//g' | grep "(L.esculenta,L.matudae)" > Esculenta_investigation/mat_esc2.$locus.tre
+sed 's/[0-9]//g' $locus.50perc.tre | sed 's/:.//g' | grep "(L.pueblana,L.matudae)" > Esculenta_investigation/mat_pueb1.$locus.tre
+sed 's/[0-9]//g' $locus.50perc.tre | sed 's/:.//g' | grep "(L.matudae,L.pueblana)" > Esculenta_investigation/mat_pueb2.$locus.tre
+sed 's/[0-9]//g' $locus.50perc.tre | sed 's/:.//g' | grep "(L.esculenta,L.pueblana)" > Esculenta_investigation/esc_pueb1.$locus.tre
+sed 's/[0-9]//g' $locus.50perc.tre | sed 's/:.//g' | grep "(L.pueblana,L.esculenta)" > Esculenta_investigation/esc_pueb2.$locus.tre
+done
+
+#tested the above and turned it into a script - mat_pueb_esc_sort.sh
+
+##Now recover the 1890 STRGs that support one of the above relationships (the head and tail remove two problematic unifomative lines):
+ll | sort -rk5 | cat -n | head -n 1891 | tail -n 1890 > esc_mat_pueb.trees.txt
+
+##How many support each
+
+
+grep -c mat_esc esc_mat_pueb.trees.txt
+638
+grep -c mat_pueb esc_mat_pueb.trees.txt
+678
+grep -c esc_pueb esc_mat_pueb.trees.txt
+574
+
+
+
+## recover the names of each
+mkdir Result
+
+grep mat_esc esc_mat_pueb.trees.txt | cut -f2 
+
+for combination in mat_esc mat_pueb esc_pueb
+do 
+grep $combination esc_mat_pueb.trees.txt | cut -f2 | cut -d" " -f13 >> Result/$combination
+done
+
+ 
+wc -l *
+  574 esc_pueb
+  638 mat_esc
+  678 mat_pueb
+ 1890 total
+
+
+
+##Recover the name of each of these STRGs for each file
+
+for combination in mat_esc mat_pueb esc_pueb
+do 
+cut -d "." -f2-3 $combination > $combination.STRG.list.txt
+done
+
+
+
+
+#so I have the lists...!!!!
+# create the "rosetta stone" of locus name matches... 
+
+
+## all the loci with 23 sequences (one for each species) are in this folder - 2265 loci
+/media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/23Locus_files/list_23taxa_loci.txt
+
+cp /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/23Locus_files/list_23taxa_loci.txt .
+
+##get the master list generated elsewhere - see dropbox "AlexPhylogeny6-29-2020-Tricha.txt"
+cp /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/STRG_to_GTF_names/STRG_to_Leutr_list_diploid_Tricha.txt .
+
+## converting to the names that match the annotation file...
+for combination in mat_esc mat_pueb esc_pueb
+do 
+grep -w -f $combination.STRG.list.txt STRG_to_Leutr_list_diploid_Tricha.txt | cut -f2 | cut -f1 -d"." > Leutr_names.$combination.txt
+done
+
+
+##Results
+wc -l Leutr_names*
+  574 Leutr_names.esc_pueb.txt
+  638 Leutr_names.mat_esc.txt
+  678 Leutr_names.mat_pueb.txt
+ 1890 total
+
+
+## what does the chromosomal distribution look like?
+ cat Leutr_names.esc_pueb.txt | cut -f2 -d "r" | cut -f1 -d "g" | sort | uniq -c
+     22 000
+     24 001
+     36 002
+     22 003
+     11 004
+     13 005
+     10 006
+     18 007
+     14 008
+     38 009
+     17 010
+     35 011
+     15 012
+     13 013
+     18 014
+     24 015
+     17 016
+     11 017
+     25 018
+     14 019
+     20 020
+     20 021
+     18 022
+     18 023
+     13 024
+     37 025
+     31 026
+     19 027
+      1 080
+
+
+
+ cat Leutr_names.mat_esc.txt | cut -f2 -d "r" | cut -f1 -d "g" | sort | uniq -c
+     cat Leutr_names.mat_esc.txt | cut -f2 -d "r" | cut -f1 -d "g" | sort | uniq -c
+     26 000
+     28 001
+     41 002
+     33 003
+     15 004
+     12 005
+     12 006
+     35 007
+     13 008
+     29 009
+     21 010
+     22 011
+     24 012
+     18 013
+     24 014
+     21 015
+     18 016
+     19 017
+     17 018
+     19 019
+     25 020
+     14 021
+     23 022
+     19 023
+     18 024
+     29 025
+     31 026
+     29 027
+      1 080
+      2 107
+
+cat Leutr_names.mat_pueb.txt | cut -f2 -d "r" | cut -f1 -d "g" | sort | uniq -c
+     20 000
+     28 001
+     48 002
+     32 003
+     12 004
+     17 005
+     17 006
+     25 007
+     14 008
+     50 009
+     18 010
+     26 011
+     16 012
+     15 013
+     24 014
+     20 015
+     20 016
+     15 017
+     23 018
+     15 019
+     34 020
+     26 021
+     23 022
+     15 023
+     17 024
+     37 025
+     43 026
+     26 027
+      1 028
+      1 102
+
+
+
+
+##need the original annotation file
+cp /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Ltri0.3_gene_models.gff3 .
+
+## making a file for the gene coordinates only.
+grep gene Ltri0.3_gene_models.gff3 > Ltri0.3_gene_models.genes_only.gff3
+
+## removing the full gff3 file
+rm Ltri0.3_gene_models.gff3
+
+##making the final karyotype file
+cp /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Alex_matrix_materials/Tricha_1_23taxa/Gene_trees/Esculenta_investigation/Result/karyotype_for_chromomap.txt .
+
+####
+#making the annotation file for each. 
+
+for combination in mat_esc mat_pueb esc_pueb
+do 
+grep -w -f Leutr_names.$combination.txt Ltri0.3_gene_models.genes_only.gff3  | cut -f1,4,5,9 | cut -f1,2 -d"=" | sed 's/;Name//g' | sed 's/ID=//g' | awk '{ print $4, $1, $2, $3 }' | sed 's/ /\t/g' > $combination.annot.chromomap.txt
+done
+
+wc -l *annot.chromomap.txt
+  573 esc_pueb.annot.chromomap.txt
+  629 mat_esc.annot.chromomap.txt
+  670 mat_pueb.annot.chromomap.txt
+ 1872 total
+
+#note, these are slightly different from phyparts because a few STRG don't have Leutr annotations.
+
+
+
+##need to remove none chromosomal contig data from each of the above... (chromosomes >#27)  that was done manually in nano from the list above...
+esc_pueb.annot.chromomap.txt- I removed Contig80 -one line
+mat_esc.annot.chromomap.txt- I removed 80 and 107 - three lines
+mat_pueb.annot.chromomap.txt- I removed 28 and 102 - two lines
+
+## now i need to add a color column and add all three sets...
+##here is an example for two colors
+chromoMap("karyotype_for_chromomap1.txt","esc_pueb.annot.chromomap_trash.txt", data_based_color_map = T, data_type = "categorical", data_colors = list(c("orange", "grey")))
+##annotations looked like this
+Leutr013g011170	Contig13	15192103	15196598	mat_esc
+Leutr013g011830	Contig13	15718222	15731419	mat_esc
+Leutr013g018630	Contig13	20838261	20843265	mat_esc
+Leutr013g020760	Contig13	22405241	22407085	mat_pueb
+Leutr013g021110	Contig13	22712872	22713989	mat_pueb
+Leutr013g021330	Contig13	22852149	22853266	mat_pueb
+
+# so I need to add the category to the *annot.chromomap.txt files
+sed 's/$/\tesc_pueb/g' esc_pueb.annot.chromomap.txt
+
+sed 's/$/\tesc_pueb/g' esc_pueb.annot.chromomap.txt > esc_pueb.annot.chromomap.group_name.txt
+sed 's/$/\tmat_esc/g' mat_esc.annot.chromomap.txt > mat_esc.annot.chromomap.group_name.txt
+sed 's/$/\tmat_pueb/g' mat_pueb.annot.chromomap.txt > mat_pueb.annot.chromomap.group_name.txt
+
+
+#combined the annotations into one file
+cat *.annot.chromomap.group_name.txt > combined_chromomap.annotations.txt
+
+
+#moving those files to my laptop
+
+
+library(chromoMap)
+chromoMap("karyotype_for_chromomap1.txt","combined_chromomap.annotations.txt")
+
+
+chromoMap("karyotype_for_chromomap1.txt","combined_chromomap.annotations.txt", data_based_color_map = T, data_type = "categorical", data_colors = list(c("red", "white", "blue")))
+ 
+##refining and adding legend..
+chromoMap("karyotype_for_chromomap1.txt","combined_chromomap.annotations.txt", data_based_color_map = T, data_type = "categorical", legend = T, lg_x = 100, lg_y = 250, data_colors = list(c("red", "white", "blue")))
+
+chromoMap("karyotype_for_chromomap1.txt","mat_esc.annot.chromomap.group_name.txt", anno_col = c("grey"))
+chromoMap("karyotype_for_chromomap1.txt","esc_pueb.annot.chromomap.group_name.txt", anno_col = c("red"))
+chromoMap("karyotype_for_chromomap1.txt","mat_pueb.annot.chromomap.group_name.txt", anno_col = c("blue"))
+
+
+
+
+#PLOTTING on the L. trichandra genome.
+#get the list of 1836 loci for L. trichandra
+cut -f2 STRG_to_Leutr_list.txt | cut -f1 -d"." > L.trich_all_loci.txt
+
+grep -w -f L.trich_all_loci.txt  Ltri0.3_gene_models.genes_only.gff3  | cut -f1,4,5,9 | cut -f1,2 -d"=" | sed 's/;Name//g' | sed 's/ID=//g' | awk '{ print $4, $1, $2, $3 }' | sed 's/ /\t/g'
+
+#now I need to remove the non-chromosomal locations 102, 107, 28, 80
+grep -v Contig102 L.trich.annot.chromomap.all_loci.txt | grep -v Contig107 | grep -v Contig28 | grep -v Contig80 > L.trich.annot.chromomap.all_loci.final1.txt
+
+
+
+

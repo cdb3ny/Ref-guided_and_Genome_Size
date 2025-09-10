@@ -1,0 +1,1944 @@
+﻿###############################
+#Reference guided assembly and phylogenetic analysis for Leucaena.  Using the the chromosomal scale genome and most recent annotation
+###############################
+
+#General workflow. Section by Section
+
+#Part 1 - Development of the Reference transcriptome
+# Use STAR to map the L. trichandra RNA-seq to L. trichandra genome and annotation file.
+# Use stringtie recover the gtf of L. trichandra genes with expression
+# Remove genes with multiple isoforms (those with .2, .3, .4 etc in the annotation)
+# Use gff read to pull back the L. trichandra genomic regions as a the reference transcriptome.  
+
+#Part 2 - Using STAR to map RNA sequence from all species to the reference transciptome
+# Map data for each species to the reference transcriptome and filter/convert to useable formats
+# From sorted bam file create a bed file of regions that are low in coverage (e.g., <5)
+# mask those low coverage regions to create a new reference that has Ns in uncovered regions so that I don't pull back the reference sequence when there isn't coverage or between paired reads
+# Use mpileup for variant calling and recover the full locus for each gene/species...
+# Recover loci that are present in all 23 taxa (ie, no missing loci from any sample and all loci with < 25% missing data per sequence per species).
+
+#Part 3 - RAxML analysis for paleotetraploid taxa
+# create concatenated file
+# Run RAxML
+# save raxml bipartition tree
+
+#Part 4 Astral analysis for paleotetraploid taxa
+# Generate gene trees with RAxML
+# Collapse nodes with < 50% BS
+# Run Astral
+
+#Part 5 - extending the process to include octoploid taxa
+#generate loci
+#curate matrices
+#generate RAxML simultaneous analysis trees
+#generate gene trees for Astral
+#generate Astral trees
+
+#Part 6 - Calculating the frequency with which any terminal is sister to any other terminal in a set of gene trees.
+
+#Part 7 - Adding the L.leuceocephala published genome data (rather than transcript de novo to the analyses).
+#this then extends to using de novo assembled transcripts for all octoploid taxa.
+
+
+
+####################################################
+#PART 1 Development of the Reference transcriptome
+####################################################
+
+#Working directory /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/   
+
+#using the new gff3 from Feb 18,2020 (Ltri0.3_gene_models.gff3) and the pilon12-23-19.fasta from Phase Genomics as starting points 
+
+#Rename the contig definition lines in the genome file to match annotation file naming in the gff3 - removing the �arrow|pilon� part of the def line
+sed 's/|arrow|pilon//g' pilon12-23-19.fasta > pilon12-23-19_rename_contigs.fasta
+
+#converting gff3 to gtf
+/Programs/gffread/gffread Ltri0.3_gene_models.gff3 -T -o LeuTri_2020.gtf
+
+#New subdirectory /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_mapping_2_4_2020/
+
+#STAR index_in the Tricha_mapping_2_4_20/ directory
+STAR --runMode genomeGenerate --genomeDir Star_index/ --runThreadN 55 --genomeSAindexNbases 13 --sjdbGTFfile ../LeuTri_2020.gtf --genomeFastaFiles ../pilon12-23-19_rename_contigs.fasta
+
+#Mapping RNA to L. trichandra genome to identify expressed loci of potential utility. Script
+
+ulimit -n 4096
+for species in Tricha_1
+do
+	STAR --genomeDir /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Star_index/ --runThreadN 55  --readFilesIn /media/Scratch10TB/Bailey_Lab/projects/LuecaenaTranscriptome/transWork/trimmed/"$species"_trimmed_paired_1.fq  /media/Scratch10TB/Bailey_Lab/projects/LuecaenaTranscriptome/transWork/trimmed/"$species"_trimmed_paired_2.fq   --sjdbGTFfile /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/LeuTri_2020.gtf  --outSAMtype BAM SortedByCoordinate --outFileNamePrefix /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_to_IllumPolish
+done
+
+#generating transcriptome
+
+	for species in Tricha_1
+	do
+	stringtie    /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_to_IllumPolishAligned.sortedByCoord.out.bam  -G  /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/LeuTri_2020.gtf    -o   /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_stringtie.gtf   -p  50
+	done
+
+
+#Recovering the resulting/matching transcripts from the genome
+	for species in Tricha_1
+	do
+	/Programs/gffread/gffread /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/"$species"/"$species"_stringtie.gtf -g /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/pilon12-23-19_rename_contigs.fasta -w /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_stringtie.fa
+	done
+
+
+#RESULT
+wc -l Tricha_1_stringtie.fa
+	Tricha_1_mapping_10-15-19/Tricha_1_stringtie.fa:96787
+
+#filter the 96797 loci by sizes and uniq transcripts - script
+
+
+for species in Tricha_1
+do
+# first, calculate the length of all CDS transcripts
+samtools faidx /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_stringtie.fa
+
+# this generates the length file - *.stringtie_transcripts.fa.fai    Cut the list to names and length only in fields 1-2
+cut -f1-2 /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_stringtie.fa.fai > /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_stringtie_transcripts_for_genome_mapping.fa.fai_name.length.txt
+#save loci between 600-5000
+cat /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/"$species"/"$species"_stringtie_transcripts_for_genome_mapping.fa.fai_name.length.txt | awk '$2>599' | awk '$2<5001' | cut -f1 | sort > /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species".stringtie_transcripts_for_genome_length600-5000.txt
+done
+
+
+##Result of wc -l on these new file - these are the loci
+
+  80265 /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1.stringtie_transcripts_for_genome_length600-5000.txt
+
+
+##Identify loci that are not complicated by the presence of multiple isoforms
+
+for species in Tricha_1
+do
+#get names of all isoforms
+grep ">" /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_stringtie.fa > /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_stringtie_names_all_iso.txt
+cut -f1 /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_stringtie_names_all_iso.txt | sort > /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_stringtie_names_all_iso.list.txt
+
+#get those STRGS that only occur once in the list (remove the terminal isoform number, sort, count, pull down those names with 1 isoform)
+cut -f1-2 -d "." /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_stringtie_names_all_iso.txt | sort | uniq -c | sort | awk '$1==1' |  cut -f2 -d ">" | sed 's/$/\.1/g' | sort > /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_one_iso.txt
+
+
+#match names on these two lists - keep names if they occur in the list with one isoform (2-Cuspi_one_iso.txt) and they are between 600-5000bp (2-Cuspi.stringtie_transcripts_for_genome_length600-5000.txt).  I double checked this was working with both comm and join commands
+comm -12 /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_one_iso.txt /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/$species.stringtie_transcripts_for_genome_length600-5000.txt > /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/$species.stringtie500-6000_w_one_iso.txt
+#gives 29460 STRIGS to map to.
+
+
+#Converted the original transcripts fasta to a one line fasta
+seqtk seq -l0 /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_stringtie.fa > /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_stringtie.oneline.fa
+
+#recover the reference genome for this round
+seqtk subseq /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_stringtie.oneline.fa /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/$species.stringtie500-6000_w_one_iso.txt > /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/$species.stringtie.500-6000.one_iso.ref_genome.fa
+#seqtk put in some odd line breaks - getting rid of those...
+seqtk seq -l0 /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/$species.stringtie.500-6000.one_iso.ref_genome.fa > /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/$species.stringtie.500-6000.one_iso.ref_genome.oneline.fa
+done
+
+
+
+#Result
+wc -l Tricha_1/Tricha_1.stringtie.500-6000.one_iso.ref_genome.oneline.fa
+28924
+
+
+
+
+########################################
+##Part 2 - Using STAR to map RNA sequence to the reference transciptome - this was also done for L. trichandra, so all with RNA-derived were generated the same way
+# Map data for each species to the reference transcriptome and filter/convert to useable formats
+# From sorted bam file create a bed file of regions that are low in coverage (e.g., <5)
+# mask those low coverage regions to create a new reference that has Ns in uncovered regions so that I don't pull back the reference sequence when there isn't coverage or between paired reads
+# Use mpileup approach to variant call and recover the full locus for each gene/species...
+# find them here - /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/
+# Recover loci that are present in all 23 taxa (ie, no missing loci from any sample and all loci with < 25% missing data per sequence per species).
+########################################
+
+#starting mapping with L trichandra to check things.
+
+#!/bin/bash
+for species in Tricha_1 
+do
+ulimit -n 4096
+
+STAR --runMode genomeGenerate --genomeDir /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/Star_index2/ --runThreadN 40 --genomeFastaFiles /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/$species.stringtie.500-6000.one_iso.ref_genome.oneline.fa
+done
+
+#!/bin/bash
+for species in Tricha_1
+do
+ulimit -n 4096
+STAR --genomeDir /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/Star_index2/ --runThreadN 25  --readFilesIn /media/Scratch10TB/Bailey_Lab/projects/LuecaenaTranscriptome/transWork/trimmed/"$species"_trimmed_paired_1.fq  /media/Scratch10TB/Bailey_Lab/projects/LuecaenaTranscriptome/transWork/trimmed/"$species"_trimmed_paired_2.fq   --outSAMtype BAM SortedByCoordinate --outFileNamePrefix /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/L."$species"_
+
+
+genomeCoverageBed -bga -split -ibam /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/L."$species"_Aligned.sortedByCoord.out.bam -g /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/$species.stringtie.500-6000.one_iso.ref_genome.oneline.fa > /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/L."$species"_Aligned.sortedByCoord.out.bam.coverage
+
+awk '$4<5' /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/L."$species"_Aligned.sortedByCoord.out.bam.coverage | cut -f1-3  > /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/L."$species"_Aligned.sortedByCoord.out.bam.coverage.bed
+
+bedtools maskfasta -fi /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/$species.stringtie.500-6000.one_iso.ref_genome.oneline.fa -fo /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/$species.stringtie.500-6000.one_iso.ref_genome.oneline.masked.fa -bed /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/L."$species"_Aligned.sortedByCoord.out.bam.coverage.bed
+
+seqtk seq -l0 /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/$species.stringtie.500-6000.one_iso.ref_genome.oneline.masked.fa > /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/$species.stringtie.500-6000.one_iso.ref_genome.oneline.masked.one_line.fa
+
+
+/home/cdb3ny/anaconda2/bin/bcftools mpileup -Ou -I -f /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/$species.stringtie.500-6000.one_iso.ref_genome.oneline.masked.one_line.fa /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/L."$species"_Aligned.sortedByCoord.out.bam -o /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/L."$species"_Aligned.sortedByCoord.out.bam.vcf
+
+/home/cdb3ny/anaconda2/bin/bcftools call -Oz -mv /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/L."$species"_Aligned.sortedByCoord.out.bam.vcf -o /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/L."$species"_Aligned.sortedByCoord.out.bam.vcf.gz
+
+tabix /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/L."$species"_Aligned.sortedByCoord.out.bam.vcf.gz
+
+/home/cdb3ny/anaconda2/bin/bcftools consensus -f /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/$species.stringtie.500-6000.one_iso.ref_genome.oneline.masked.one_line.fa   /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/L."$species"_Aligned.sortedByCoord.out.bam.vcf.gz   >  /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/L."$species"_RNA_consensus_for_mappingmasked.fa
+done
+
+
+
+##checking results
+
+for species in Tricha_1
+do
+grep ">" -c /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/"$species"/L."$species"_RNA_consensus_for_mappingmasked.fa
+
+done
+
+
+grep ">" -c L.Tricha_1_RNA_consensus_for_mappingmasked.fa
+28924 for Tricha_1
+
+
+
+
+
+#mkdir and reference genome index
+
+
+for species in Tricha_1 
+do
+mkdir /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all
+mkdir /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/Star_index
+done
+
+#cp the genome over to the proper directory
+for species in Tricha_1
+do
+cp /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/L."$species"_RNA_consensus_for_mappingmasked.fa  /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/L."$species"_RNA_consensus_for_mappingmasked.fa
+done
+
+
+#generate genome index
+for species in Tricha_1
+do
+STAR --runMode genomeGenerate --genomeDir /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/Star_index/ --runThreadN 40 --genomeFastaFiles /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/L."$species"_RNA_consensus_for_mappingmasked.fa
+done
+
+
+#Mapping for each addditional species
+
+
+for species in Tricha_1 
+do
+ulimit -n 4096
+for sample in Tricha_1 4-Greggi 3-Escu 2-Cuspi 1-Collin 23b-Leuco3S Zacap_1 5-Lan-lan 6-Lempi 7-Macro 8-Mac-Ist Adeno_1 Cruz_1 Diver_1 Invol_1 Magni_1  Mcapi_1 Mutud_1 Palli_1 Pulver_1 Retus_1 Glabr_1 Entada_abyssinica Salvo_1 Shann_1 Trichod_1 Albizia_julibrissin 
+
+do
+
+STAR --genomeDir /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/Star_index/ --runThreadN 20  --readFilesIn /media/Scratch10TB/Bailey_Lab/projects/LuecaenaTranscriptome/transWork/trimmed/"$sample"_trimmed_paired_1.fq  /media/Scratch10TB/Bailey_Lab/projects/LuecaenaTranscriptome/transWork/trimmed/"$sample"_trimmed_paired_2.fq   --outSAMtype BAM SortedByCoordinate --outFileNamePrefix /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/L."$sample"_mapping
+
+genomeCoverageBed -bga -split -ibam /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/L."$sample"_mappingAligned.sortedByCoord.out.bam -g /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/L."$species"_RNA_consensus_for_mappingmasked.fa > /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/L."$sample"_Aligned.sortedByCoord.out.bam.coverage
+
+awk '$4<5' /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/L."$sample"_Aligned.sortedByCoord.out.bam.coverage | cut -f1-3  > /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/L."$sample"_Aligned.sortedByCoord.out.bam.coverage.bed
+
+bedtools maskfasta -fi /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/L."$species"_RNA_consensus_for_mappingmasked.fa -fo /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/$sample.stringtie.500-6000.one_iso.ref_genome.masked.fa -bed /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/L."$sample"_Aligned.sortedByCoord.out.bam.coverage.bed
+
+seqtk seq -l0 /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/$sample.stringtie.500-6000.one_iso.ref_genome.masked.fa > /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/$sample.stringtie.500-6000.one_iso.ref_genome.masked.one_line.fa
+done
+done
+
+
+#repeating the process for the outgroup Microlobius, which only has forward reads
+
+#!/bin/bash
+for species in Tricha_1
+
+do
+ulimit -n 4096
+for sample in Microlobius_foetidus
+
+do
+
+STAR --genomeDir /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/"$species"/"$species"_mapping_all/Star_index/ --runThreadN 20  --readFilesIn /media/Scratch10TB/Bailey_Lab/projects/LuecaenaTranscriptome/transWork/trimmed/"$sample"_trimmed_paired_1.fq  --outSAMtype BAM SortedByCoordinate --outFileNamePrefix /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/L."$sample"_mapping
+
+genomeCoverageBed -bga -split -ibam /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/L."$sample"_mappingAligned.sortedByCoord.out.bam -g /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/L."$species"_RNA_consensus_for_mappingmasked.fa > /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/L."$sample"_Aligned.sortedByCoord.out.bam.coverage
+
+awk '$4<5' /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/L."$sample"_Aligned.sortedByCoord.out.bam.coverage | cut -f1-3  > /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/L."$sample"_Aligned.sortedByCoord.out.bam.coverage.bed
+
+bedtools maskfasta -fi /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/L."$species"_RNA_consensus_for_mappingmasked.fa -fo /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/$sample.stringtie.500-6000.one_iso.ref_genome.masked.fa -bed /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/L."$sample"_Aligned.sortedByCoord.out.bam.coverage.bed
+
+seqtk seq -l0 /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/$sample.stringtie.500-6000.one_iso.ref_genome.masked.fa > /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/$sample.stringtie.500-6000.one_iso.ref_genome.masked.one_line.fa
+done
+done
+
+
+
+#Repeating the process for L. pueblana, which has assembled genomic data, not RNA-seq data
+
+
+#!/bin/bash
+
+
+for species in Tricha_1
+
+do
+ulimit -n 4096
+for sample in PueblanaG
+
+do
+
+STAR --genomeDir /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/"$species"/"$species"_mapping_all/Star_index/ --runThreadN 20 --limitIObufferSize 150000000  --readFilesIn /media/Scratch10TB/Bailey_Lab/projects/LuecaenaTranscriptome/transWork/trimmed/"$sample"-DNA-250bp_1_trimmed_paired_1.fq  /media/Scratch10TB/Bailey_Lab/projects/LuecaenaTranscriptome/transWork/trimmed/"$sample"-DNA-250bp_1_trimmed_paired_2.fq   --outSAMtype BAM SortedByCoordinate --outFileNamePrefix /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/L."$sample"_mapping
+
+genomeCoverageBed -bga -split -ibam /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/L."$sample"_mappingAligned.sortedByCoord.out.bam -g /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/L."$species"_RNA_consensus_for_mappingmasked.fa > /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/L."$sample"_Aligned.sortedByCoord.out.bam.coverage
+
+awk '$4<5' /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/L."$sample"_Aligned.sortedByCoord.out.bam.coverage | cut -f1-3  > /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/L."$sample"_Aligned.sortedByCoord.out.bam.coverage.bed
+
+bedtools maskfasta -fi /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/L."$species"_RNA_consensus_for_mappingmasked.fa -fo /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/$sample.stringtie.500-6000.one_iso.ref_genome.masked.fa -bed /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/L."$sample"_Aligned.sortedByCoord.out.bam.coverage.bed
+
+seqtk seq -l0 /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/$sample.stringtie.500-6000.one_iso.ref_genome.masked.fa > /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/$species/"$species"_mapping_all/$sample.stringtie.500-6000.one_iso.ref_genome.masked.one_line.fa
+done
+done
+
+
+
+
+
+
+6/30/20
+#recovering loci for each sample with Mpileup - script
+
+
+#Tricha_1REFERENCE
+#mpileup1
+
+for species in Tricha_1
+
+do
+
+for sample in 1-Collin Invol_1 23b-Leuco3S 3-Escu 4-Greggi Zacap_1 5-Lan-lan 6-Lempi 7-Macro 8-Mac-Ist Adeno_1 Cruz_1 Diver_1 2-Cuspi Invol_1 Magni_1  Mcapi_1 Mutud_1 Palli_1 Pulver_1 Retus_1 Tricha_1 Glabr_1 Entada_abyssinica Salvo_1 Shann_1 Trichod_1 Albizia_julibrissin Microlobius_foetidus PueblanaG
+
+do
+
+/home/cdb3ny/anaconda2/bin/bcftools mpileup -Ou -I -f /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/"$species"/"$species"_mapping_all/$sample.stringtie.500-6000.one_iso.ref_genome.masked.one_line.fa /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/"$species"/"$species"_mapping_all/L."$sample"_mappingAligned.sortedByCoord.out.bam -o /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/"$species"/"$species"_mapping_all/L."$sample"_Aligned.sortedByCoord.out.bam.vcf
+
+/home/cdb3ny/anaconda2/bin/bcftools call -Oz -mv /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/"$species"/"$species"_mapping_all/L."$sample"_Aligned.sortedByCoord.out.bam.vcf -o /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/"$species"/"$species"_mapping_all/L."$sample"_Aligned.sortedByCoord.out.bam.vcf.gz
+
+tabix /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/"$species"/"$species"_mapping_all/L."$sample"_Aligned.sortedByCoord.out.bam.vcf.gz
+
+
+/home/cdb3ny/anaconda2/bin/bcftools consensus -f /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/"$species"/"$species"_mapping_all/$sample.stringtie.500-6000.one_iso.ref_genome.masked.one_line.fa   /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/"$species"/"$species"_mapping_all/L."$sample"_Aligned.sortedByCoord.out.bam.vcf.gz   >   /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/"$species"/"$species"_mapping_all/L."$sample"_RNA_consensus.fa
+
+done
+done
+
+
+
+
+
+
+#RESULT
+
+ grep -c "N" *RNA* | sort -nt ':' -k2,2
+
+#The number of Ns in each file
+L.Tricha_1_RNA_consensus_for_mappingmasked.fa:175689
+L.Tricha_1_RNA_consensus.fa:193692
+L.6-Lempi_RNA_consensus.fa:235518
+L.Adeno_1_RNA_consensus.fa:238333
+L.Diver_1_RNA_consensus.fa:238994
+L.Zacap_1_RNA_consensus.fa:240265
+L.5-Lan-lan_RNA_consensus.fa:241265
+L.8-Mac-Ist_RNA_consensus.fa:244686
+L.Mcapi_1_RNA_consensus.fa:246560
+L.Palli_1_RNA_consensus.fa:247043
+L.Trichod_1_RNA_consensus.fa:247079
+L.1-Collin_RNA_consensus.fa:247525
+L.Shann_1_RNA_consensus.fa:249421
+L.23b-Leuco3S_RNA_consensus.fa:250061
+L.7-Macro_RNA_consensus.fa:250987
+L.Invol_1_RNA_consensus.fa:253649
+L.Cruz_1_RNA_consensus.fa:254005
+L.Magni_1_RNA_consensus.fa:258756
+L.Pulver_1_RNA_consensus.fa:262765
+L.Glabr_1_RNA_consensus.fa:264809
+L.Retus_1_RNA_consensus.fa:266974
+L.Mutud_1_RNA_consensus.fa:268040
+L.4-Greggi_RNA_consensus.fa:268902
+L.2-Cuspi_RNA_consensus.fa:269065
+L.PueblanaG_RNA_consensus.fa:272465
+L.3-Escu_RNA_consensus.fa:273165
+L.Salvo_1_RNA_consensus.fa:282387
+L.Microlobius_foetidus_RNA_consensus.fa:385961
+L.Albizia_julibrissin_RNA_consensus.fa:424032
+L.Entada_abyssinica_RNA_consensus.fa:528029
+
+
+#Selecting, renaming, and parsing loci
+
+
+mkdir /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files 
+cp *RNA_consensus.fa Consensus_files/
+	
+
+#rename each species file...
+
+#renamed all files manually...
+mv L.1-Collin_RNA_consensus.fa L.collinsii.RNA_consensus.fa 
+mv L.23b-Leuco3S_RNA_consensus.fa L.leucocephala.23b.3s.RNA_consensus.fa 
+mv L.2-Cuspi_RNA_consensus.fa L.cuspidata.RNA_consensus.fa 
+mv L.3-Escu_RNA_consensus.fa L.esculenta.RNA_consensus.fa
+mv L.4-Greggi_RNA_consensus.fa L.greggii.RNA_consensus.fa 
+mv L.5-Lan-lan_RNA_consensus.fa L.lanceolata.RNA_consensus.fa 
+mv L.6-Lempi_RNA_consensus.fa L.lempirana.RNA_consensus.fa 
+mv L.7-Macro_RNA_consensus.fa L.macrophylla-mac.RNA_consensus.fa 
+mv L.8-Mac-Ist_RNA_consensus.fa L.macrophylla-ist.RNA_consensus.fa 
+mv L.Adeno_1_RNA_consensus.fa L.confertiflora-aden.RNA_consensus.fa 
+mv L.Albizia_julibrissin_RNA_consensus.fa Albizia_julibrissin.RNA_consensus.fa 
+mv L.Cruz_1_RNA_consensus.fa L.cruziana.RNA_consensus.fa 
+mv L.Diver_1_RNA_consensus.fa L.diversifolia.RNA_consensus.fa 
+mv L.Entada_abyssinica_RNA_consensus.fa Entada_abyssinica.RNA_consensus.fa 
+mv L.Glabr_1_RNA_consensus.fa L.leucocephala-gla.RNA_consensus.fa 
+mv L.Invol_1_RNA_consensus.fa L.involucrata.RNA_consensus.fa 
+mv L.Magni_1_RNA_consensus.fa L.magnifica.RNA_consensus.fa 
+mv L.Mcapi_1_RNA_consensus.fa L.multicapitula.RNA_consensus.fa 
+mv L.Microlobius_foetidus_RNA_consensus.fa Microlobius_foetidus.RNA_consensus.fa 
+mv L.Mutud_1_RNA_consensus.fa L.matudae.RNA_consensus.fa 
+mv L.Palli_1_RNA_consensus.fa L.pallida.RNA_consensus.fa 
+mv L.PueblanaG_RNA_consensus.fa L.pueblana.RNA_consensus.fa 
+mv L.Pulver_1_RNA_consensus.fa L.pulverulenta.RNA_consensus.fa 
+mv L.Retus_1_RNA_consensus.fa L.retusa.RNA_consensus.fa 
+mv L.Salvo_1_RNA_consensus.fa L.salvadorensis.RNA_consensus.fa 
+mv L.Shann_1_RNA_consensus.fa L.shannonii.RNA_consensus.fa 
+mv L.Tricha_1_RNA_consensus.fa L.trichandra.RNA_consensus.fa
+mv L.Trichod_1_RNA_consensus.fa L.trichodes.RNA_consensus.fa 
+mv L.Zacap_1_RNA_consensus.fa L.zacapana.RNA_consensus.fa 
+
+
+# for the loci we need this information from the reference genome - working in the Consensus/ folder
+
+	samtools faidx L.trichandra.RNA_consensus.fa
+	cut -f1-2 L.trichandra.RNA_consensus.fa.fai > L.Trichanda_loci_name_length.txt
+
+
+#Recover those loci with less than 25% missing data in each sample
+
+for new in Microlobius_foetidus Entada_abyssinica Albizia_julibrissin L.collinsii L.leucocephala.23b.3s L.cuspidata L.esculenta L.greggii L.lanceolata L.lempirana L.macrophylla-mac L.macrophylla-ist L.confertiflora-aden L.cruziana L.diversifolia L.leucocephala-gla L.involucrata L.magnifica L.multicapitula L.matudae L.pallida L.pueblana L.pulverulenta L.retusa L.salvadorensis L.shannonii L.trichodes L.trichandra L.zacapana
+do
+sed s'/[A G C T]//g' $new.RNA_consensus.fa > $new.consensus.Ns.fa
+seqtk seq -l0 $new.consensus.Ns.fa > $new.consensus.Ns.one_line.fa
+grep -v ">" $new.consensus.Ns.one_line.fa | awk '{ print length }' > $new.Ns.fa.oneline.fa.lengthNs.txt
+paste L.Trichanda_loci_name_length.txt $new.Ns.fa.oneline.fa.lengthNs.txt | awk '{a=$3/$2;print $0,a;}' | awk '$4<.25' | cut -f1 > $new.loci.lengthNs.less_than_25percN.txt
+seqtk subseq $new.RNA_consensus.fa $new.loci.lengthNs.less_than_25percN.txt > $new.stringtie_transcripts600-5000bp.consensus.25perc.Ns.fa
+seqtk seq -l0 $new.stringtie_transcripts600-5000bp.consensus.25perc.Ns.fa > $new.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.fa
+done
+
+
+
+
+##result below for the number of loci retained 7/1/20
+Albizia_julibrissin.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.fa:7298
+Entada_abyssinica.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.fa:3287
+L.collinsii.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.fa:15243
+L.confertiflora-aden.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.fa:15344
+L.cruziana.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.fa:14987
+L.cuspidata.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.fa:14262
+L.diversifolia.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.fa:15360
+L.esculenta.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.fa:14096
+L.greggii.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.fa:14336
+L.involucrata.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.fa:14959
+L.lanceolata.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.fa:15384
+L.lempirana.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.fa:15560
+L.leucocephala.23b.3s.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.fa:15177
+L.leucocephala-gla.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.fa:14490
+L.macrophylla-ist.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.fa:15236
+L.macrophylla-mac.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.fa:15035
+L.magnifica.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.fa:14604
+L.matudae.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.fa:14245
+L.multicapitula.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.fa:15193
+L.pallida.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.fa:15084
+L.pueblana.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.fa:14204
+L.pulverulenta.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.fa:14538
+L.retusa.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.fa:14430
+L.salvadorensis.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.fa:14014
+L.shannonii.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.fa:15078
+L.trichandra.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.fa:17323
+L.trichodes.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.fa:15142
+L.zacapana.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.fa:15399
+Microlobius_foetidus.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.fa:8941
+
+
+#rename the loci in each file
+for species in Microlobius_foetidus Entada_abyssinica Albizia_julibrissin L.collinsii L.leucocephala.23b.3s L.cuspidata L.esculenta L.greggii L.lanceolata L.lempirana L.macrophylla-mac L.macrophylla-ist L.confertiflora-aden L.cruziana L.diversifolia L.leucocephala-gla L.involucrata L.magnifica L.multicapitula L.matudae L.pallida L.pueblana L.pulverulenta L.retusa L.salvadorensis L.shannonii L.trichodes L.trichandra L.zacapana
+do
+sed 's/>STRG/>'$species'.STRG/g' $species.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.fa > $species.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.species.fa
+done
+
+
+##mkdir
+mkdir /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/23Locus_files
+
+grep ">" L.trichandra.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.species.fa | sed 's/>//g' | cut -f3,4,5 -d "."  > names_with_one_isoform_final-1.txt
+cd 23Locus_files/
+cat ../names_with_one_isoform_final-1.txt | xargs touch --
+
+tr '\n' ' ' < ../names_with_one_isoform_final-1.txt > 23locus_sort.sh
+
+##now convert that file into this script... 
+
+for species in Microlobius_foetidus Entada_abyssinica Albizia_julibrissin L.collinsii L.cuspidata L.esculenta L.greggii L.lanceolata L.lempirana L.macrophylla-mac L.macrophylla-ist L.cruziana L.magnifica L.multicapitula L.matudae L.pueblana L.pulverulenta L.retusa L.salvadorensis L.shannonii L.trichodes L.trichandra L.zacapana
+do
+for locus in STRG.1.1 STRG.2.1 (all STRGs)
+do
+grep -x -A1 ">$species."$locus"" ../$species.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.species.fa >> $locus
+done
+done
+
+7/1/20
+## ran 23locus_sort.sh
+
+
+#Here are the number of loci represented by 1-23 taxa - we only want those with all 23 taxa
+270 1
+    247 10
+    232 11
+    275 12
+    287 13
+    315 14
+    331 15
+    367 16
+    484 17
+    622 18
+   1100 19
+    254 2
+   2898 20
+   2355 21
+   3490 22
+   2265 23
+    231 3
+    225 4
+    224 5
+    201 6
+    239 7
+    199 8
+    212 9
+    
+ 
+ 
+
+#Standardize names within each locus so only a standard species name occurs within each file example
+grep -c ">" STRG* | sed 's/:/\t/g' | awk '$2==23' | cut -f1 > list_23taxa_loci.txt
+
+tr '\n' ' ' <  list_23taxa_loci.txt > 23taxa.sh
+
+#example of the script (23taxa.sh)
+for i in  STRG.10006.1 STRG.10007.1
+do
+sed 's/.STRG.*//g' $i > $i.rename.fa
+done
+
+
+
+
+
+######################################################
+#Part 3 - RAxML analysis for paleotetraploid taxa
+#create concatenated file
+#Run RAxML
+#save raxml bipartition tree
+#run phyparts for graphs
+#run astral
+
+######################################################
+
+#/media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/23Locus_files/
+mkdir 23Locus_matrix
+mv *rename.fa 23Locus_matrix
+cd 23Locus_matrix
+#I checked names are all in the proper order for each STRG file
+#now concatentate for RAxML analysis
+
+/Programs/catfasta2phyml-master/catfasta2phyml.pl --sequential *rename.fa > out.phy 2>out.partitions.txt                                                                                                                                                             t.phy
+
+#7/1/2020
+#RAxML with bootstrap analysis
+
+raxmlHPC -f a -T 50 -m GTRCAT -p 12345 -x 12345 -# 100 -s out.phy -n Combined23-loci -o Microlobius_foetidus
+
+cat RAxML_bipartitions.Combined23-loci
+((Albizia_julibrissin:0.03223137103735732034,(Entada_abyssinica:0.06140442492393070884,((L.trichandra:0.00388016561827348328,((L.magnifica:0.00552431685045588847,(L.zacapana:0.00510541866975410333,L.collinsii:0.00520756169809145301)100:0.00144946072659211554)100:0.00063846252132950876,((((L.lanceolata:0.00487786656591316682,L.cruziana:0.00498884783220376275)100:0.00094356612104051719,((L.macrophylla-mac:0.00247077856621897825,L.macrophylla-ist:0.00269278571404821167)100:0.00251061767283863478,L.trichodes:0.00500883150272639875)100:0.00096270637725429564)100:0.00130890812108995632,L.multicapitula:0.00638132805214132199)100:0.00090652755992308681,(L.lempirana:0.00603069502203595204,(L.salvadorensis:0.00638713961214237413,L.shannonii:0.00497773891992538391)100:0.00102876342854486087)100:0.00043140078102297017)100:0.00052186370924842552)100:0.00117476029611548907)100:0.00572175152761620915,(((L.pulverulenta:0.00970479088497350033,(L.retusa:0.00769505416922430623,L.greggii:0.00713849213422261628)100:0.00276755207003666565)100:0.00132310876131495610,((L.pueblana:0.00837620830783714423,L.matudae:0.00480645649582161355)100:0.00129146807435800374,L.esculenta:0.00477741209017462035)100:0.00606737015234690581)100:0.00075254997787083111,L.cuspidata:0.00794207950170026933)100:0.00199818298027491662)100:0.01583514071466713899)100:0.00483457054189796558):0.01374660231112294871,Microlobius_foetidus:0.01374660231112294871);
+
+
+
+
+########################################
+#Part 4 Astral analysis for paleotetraploid taxa
+# Generate gene trees with RAxML
+# Collapse nodes with < 50% BS
+# Run Astral
+##########################################
+
+#/media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/23Locus_files/23Locus_matrix
+mkdir Gene_trees
+ll | grep STRG | sed 's/  */ /g' | cut -f9 -d " " | cut -f1,2 -d "." | tr '\n' ' ' > gene_trees.sh
+chmod +x gene_trees.sh
+
+mv gene_trees.sh Gene_trees/
+ln STRG.*.rename.fa Gene_trees/
+cd Gene_trees
+
+#Generate gene trees, the script added to gene_trees.sh
+
+for i in STRG.9937
+do
+/Programs/Fasta2phylip.pl $i.1.rename.fa $i.phy
+raxmlHPC -f a -T 2 -m GTRCAT -p 12345 -x 12345 -# 100 -s $i.phy -n $i.1 -o Microlobius_foetidus
+rm $i.phy.reduced
+done
+
+
+#result
+ll RAxML_bestTree.STRG.* | wc -l
+2264
+
+
+# Collapsing nodes, running phyparts, and Astral
+/media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/23Locus_files/23Locus_matrix/Gene_trees
+mkdir /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/23Locus_files/23Locus_matrix/Gene_trees/Phyparts1
+#collapse nodes for all loci 50%
+#requires "conda activate Newick_utilities"
+
+#script named = collapse_gene_trees_50perc.sh
+for i in STRG.9937 etc...
+do
+nw_ed RAxML_bipartitions.$i.1 'i & b<=50' o > Phyparts1/$i.50perc.tre
+done
+
+
+#working directory /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/23Locus_files/23Locus_matrix/Gene_trees/Phyparts1
+
+
+cat ../STRG.*.50perc.tre > ../50percent-trees.tre
+mv ../50percent-trees.tre Phyparts/
+java -jar /Programs/phyparts/target/phyparts-0.0.1-SNAPSHOT-jar-with-dependencies.jar -a 1 -m ../../RAxML_bipartitions.Combined23-loci -d Phyparts/50percent-trees.tre -o Phyparts/phyparts50
+
+
+xvfb-run python /Programs/phypartspiecharts.py ../../../RAxML_bestTree.Combined23-loci phyparts50 2265
+mv pies.svg pies50.svg
+
+
+
+###ASTRAL...
+pwd 
+/media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/23Locus_files/23Locus_matrix/Gene_trees/Phyparts1/Phyparts
+
+mkdir Astral
+
+java -jar /Programs/Astral/astral.5.6.2.jar -t 3 -i 50percent-trees.tre -o Astral/50perc.Astral.speciestree.tre
+java -jar /Programs/Astral/astral.5.6.2.jar -t 3 -i 33percent-trees.tre -o Astral/33perc.Astral.speciestree.tre 
+java -jar /Programs/Astral/astral.5.6.2.jar -t 3 -i 10percent-trees.tre -o Astral/10perc.Astral.speciestree.tre
+
+
+
+
+
+
+
+
+
+
+#############################################
+#Part 5 - extending the process to include octoploid taxa
+#generate loci
+#curate matrices
+#generate RAxML simultaneous analysis trees
+#generate gene trees for Astral
+#generate Astral trees
+
+#############################################
+
+
+#starting working directory - /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/
+
+#The per locus data for each octoploid was generated using the same approach as desribed for the paleotetraploids.
+q
+mkdir 29Locus_files
+cd 29Locus_files
+tr '\n' ' ' < ../names_with_one_isoform_final-1.txt > 23locus_sort.sh
+cp ../23Locus_files/STRG* .
+cp ../23Locus_files/23locus_sort.sh .
+mv 23locus_sort.sh 29locus_sort.sh
+chmod u+x 29locus_sort.sh
+
+##add polyploid names to run
+
+for species in L.leucocephala.23b.3s L.confertiflora-aden L.diversifolia L.leucocephala-gla L.involucrata L.pallida
+do
+for locus in STRG....
+do
+grep -x -A1 ">$species."$locus"" ../$species.stringtie_transcripts600-5000bp.consensus.25perc.Ns.singleline.species.fa >> $locus
+done
+done
+
+
+
+##resulting loci
+ 201 1
+    152 10
+    166 11
+    169 12
+    168 13
+    177 14
+    190 15
+    210 16
+    223 17
+    227 18
+    245 19
+    226 2
+    258 20
+    316 21
+    342 22
+    481 23
+    595 24
+   1045 25
+   2799 26
+   2267 27
+   3453 28
+   2252 29
+    170 3
+    185 4
+    160 5
+    167 6
+    162 7
+    149 8
+    168 9
+    
+  
+
+    
+
+#how to standardize names within each locus so only a standard species name occurs within each file example
+grep -c ">" STRG* | sed 's/:/\t/g' | awk '$2==29' | cut -f1 > list_29taxa_loci.txt
+
+tr '\n' ' ' <  list_29taxa_loci.txt > 29taxa.sh
+
+#example of the script (29taxa.sh)
+for i in  STRG.10006.1 STRG.10007.1 ..
+do
+sed 's/.STRG.*//g' $i > $i.rename29.fa
+done
+
+
+mkdir 29Locus_matrix
+mv *rename29.fa 29Locus_matrix
+cd 29Locus_matrix
+#I checked names are all in the proper order for each STRG file
+#now concatentate
+/Programs/catfasta2phyml-master/catfasta2phyml.pl --sequential *rename29.fa > out.phy 2>out.partitions.txt
+
+#now with bootstraps
+raxmlHPC -f a -T 5 -m GTRCAT -p 12345 -x 12345 -# 100 -s out.phy -n Combined29-loci -o Microlobius_foetidus
+
+cat RAxML_bipartitions.Combined29-loci
+(((Entada_abyssinica:0.06461040518042930614,((L.trichandra:0.00403086884013718373,((L.magnifica:0.00572404246260711444,(L.zacapana:0.00526821602463325035,L.collinsii:0.00539268267941208235)100:0.00149622712969754625)100:0.00066949952425888288,((L.lempirana:0.00622923113216827893,(L.salvadorensis:0.00660695546937196520,L.shannonii:0.00514649611835307080)100:0.00106196730100189488)100:0.00044715269567579982,(L.multicapitula:0.00659086201999768261,((L.cruziana:0.00516285899791297208,L.lanceolata:0.00505147355821011692)100:0.00096813647537909500,((L.macrophylla-ist:0.00277458849088638810,L.macrophylla-mac:0.00255367340842937562)100:0.00259800533310309981,L.trichodes:0.00517398748431622917)100:0.00098897738180627869)100:0.00135519845473464854)100:0.00093531810211394271)100:0.00053658953363007575)100:0.00119332358800539376)100:0.00529931920260263024,((L.confertiflora-aden:0.00567584797494105273,L.cuspidata:0.00655355277760875151)100:0.00300304521347584570,(((L.involucrata:0.00550052184544462964,L.pallida:0.00391547235401221161)100:0.00255655797242707863,(L.pueblana:0.00861944280119331975,(L.esculenta:0.00529853823530022396,L.matudae:0.00535330369255057528)36:0.00113399634344086078)100:0.00312157323477544680)100:0.00405857963951498316,((L.diversifolia:0.00686094029007736431,(L.pulverulenta:0.00664751128163458289,(L.leucocephala-gla:0.00413461552730373921,L.leucocephala.23b.3s:0.00392514689131346749)100:0.00383058820204480906)100:0.00246620023658075628)100:0.00276843117686180300,(L.greggii:0.00741672854093863854,L.retusa:0.00795175092677767072)100:0.00412549782459409407)100:0.00095397353180575015)100:0.00055598339120522589)100:0.00129277756975304373)100:0.01705523643102677123)100:0.00493269787780163758,Albizia_julibrissin:0.03365679200470756555):0.01429976359778635867,Microlobius_foetidus:0.01429976359778635867);
+
+
+
+
+#Generate gene tree sets for the polyploids... starting with the 29 taxon combined matrix
+
+#working directory - /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix
+
+
+mkdir /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees
+
+## making trees for every gene tree matrix... 
+
+29Locus_gene_trees.sh
+
+for i in STRG.9937 ...
+do
+/Programs/Fasta2phylip.pl $i.1.rename29.fa Gene_trees/$i.1.29.phy
+done
+
+
+cd Gene_trees/ 
+
+
+for i in STRG.9937 all
+do
+raxmlHPC -f a -T 20 -m GTRCAT -p 12345 -x 12345 -# 100 -s $i.1.29.phy -n $i.1 -o Microlobius_foetidus
+rm $i.1.29.phy.reduced
+done
+
+
+
+##while those are running, make the gene tree matrices for each polyploid taxon
+pwd
+/media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny$ cd Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/
+
+for species in L.leucocephala.23b.3s L.confertiflora-aden L.diversifolia L.leucocephala-gla L.involucrata L.pallida
+do
+mkdir $species
+done
+
+
+
+##creating the gene tree sets for each polyploid species
+
+for polyploid in L.leucocephala.23b.3s L.confertiflora-aden L.diversifolia L.leucocephala-gla L.involucrata L.pallida
+do
+for STRG in STRG.9937 add to list... 
+do
+	grep ^29 $STRG.1.29.phy >> $polyploid/$STRG.1.29.$polyploid.phy
+	sed 's/^29/24/g' $polyploid/$STRG.1.29.$polyploid.phy > $polyploid/$STRG.1.24.$polyploid.phy
+	rm $polyploid/$STRG.1.29.$polyploid.phy
+
+for species in Microlobius_foetidus Entada_abyssinica Albizia_julibrissin L.collinsii L.cuspidata L.esculenta L.greggii L.lanceolata L.lempirana L.macrophylla-mac L.macrophylla-ist L.cruziana L.magnifica L.multicapitula L.matudae L.pueblana L.pulverulenta L.retusa L.salvadorensis L.shannonii L.trichodes L.trichandra L.zacapana $polyploid
+do
+	grep $species $STRG.1.29.phy >> $polyploid/$STRG.1.24.$polyploid.phy
+done
+done
+done
+
+
+
+## ran the above as an sh file - ./single_polyploids.sh
+
+##now to generate gene trees for each locus and each polyploid... I created the script below to be run within each polyploid subfolder...  will edit the first line in each folder...  
+
+
+for polyploid in L.leucocephala.23b.3s 
+##L.confertiflora-aden L.diversifolia L.leucocephala-gla L.involucrata L.pallida
+do
+for STRG in STRG.1000 
+##STRG.10015 STRG.10018 STRG.10023 STRG.10029 STRG.10066 STRG.10081 STRG.10087 STRG.10111 STRG.10136 STRG.1015 STRG.10152 STRG.10188 STRG.10201 STRG.10208 STRG.10240 STRG.10316 STRG.10339 STRG.10364 STRG.10443 STRG.1$
+do
+raxmlHPC -f a -T 5 -m GTRCAT -p 12345 -x 12345 -# 100 -s $STRG.1.24.$polyploid.phy -n $STRG.1 -o Microlobius_foetidus
+rm $STRG.1.24.$polyploid.phy.reduced
+done
+done
+
+#above script is 24_locus_tree_template.sh  - one copy in each polyploid folder.  Modified on line 1
+
+
+##checking results...
+for polyploid in L.leucocephala.23b.3s L.confertiflora-aden L.diversifolia L.leucocephala-gla L.involucrata L.pallida
+do 
+ll $polyploid/ |  grep RAxML_bootstrap.STRG | wc -l
+done
+
+2252
+2252
+2252
+2252
+2252
+2252
+
+
+
+#for Astral later, I need the combined tree for 24 loci
+/media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/
+
+##convert phy back to fasta for concatenation
+
+./24_RAxML_sp_trees.sh
+
+for polyploid in L.leucocephala.23b.3s L.confertiflora-aden L.diversifolia L.leucocephala-gla L.involucrata L.pallida
+do
+mkdir $polyploid/Polyploid_RAX_tree
+for i in STRG...
+do
+tail -n24 $polyploid/$i.1.24.$polyploid.phy | sed 's/^/>/g' | sed 's/\t/\n/g' > $polyploid/Polyploid_RAX_tree/$i.1.$polyploid.fa
+done
+done
+
+
+##concatenate and generate the RAxML concatentated species tree
+
+./24_RAxML_sp_trees-2.sh
+
+for polyploid in L.leucocephala.23b.3s L.confertiflora-aden L.diversifolia L.leucocephala-gla L.involucrata L.pallida
+do
+/Programs/catfasta2phyml-master/catfasta2phyml.pl --sequential $polyploid/Polyploid_RAX_tree/*.fa > $polyploid/Polyploid_RAX_tree/out.phy 2>$polyploid/Polyploid_RAX_tree/out.partitions.txt
+cd $polyploid/Polyploid_RAX_tree
+raxmlHPC -f a -T 50 -m GTRCAT -p 12345 -x 12345 -# 100 -s out.phy -n $polyploid.24-loci -o Microlobius_foetidus
+rm out.phy.reduced
+cd ../..
+done
+
+##print trees 
+for polyploid in L.leucocephala.23b.3s L.confertiflora-aden L.diversifolia L.leucocephala-gla L.involucrata L.pallida
+do
+echo $polyploid
+cat $polyploid/Polyploid_RAX_tree/RAxML_bipartitions.$polyploid.24-loci
+done
+
+
+#L.leucocephala.23b.3s
+((Albizia_julibrissin:0.03254583257978243410,(((L.trichandra:0.00392781154211598645,(((L.collinsii:0.00524961437664001225,L.zacapana:0.00513922945783013528)100:0.00146215120714108821,L.magnifica:0.00557438626347182831)100:0.00064671517021026284,((L.multicapitula:0.00642376831049806460,((L.cruziana:0.00502943788941071206,L.lanceolata:0.00492376515236275791)100:0.00094662935562389073,(L.trichodes:0.00504191732548382992,(L.macrophylla-mac:0.00248797721390995284,L.macrophylla-ist:0.00270640660784703026)100:0.00253246289633423131)100:0.00096250943872397930)100:0.00132124120948991404)100:0.00091491259148540605,(L.lempirana:0.00606511803939951185,(L.salvadorensis:0.00643666493320714083,L.shannonii:0.00501505419069997720)100:0.00104006415445460974)100:0.00043562151645509676)100:0.00052246919439245267)100:0.00116927755348379876)100:0.00570742702897923757,((((L.leucocephala.23b.3s:0.00719079308038212978,L.pulverulenta:0.00561851477976928974)100:0.00473262882903439409,(L.greggii:0.00719703117409498019,L.retusa:0.00775356678082194349)100:0.00314781746340016873)100:0.00094276661159525843,((L.matudae:0.00482681312953291402,L.pueblana:0.00844098859997391947)100:0.00131372940035803213,L.esculenta:0.00480162969091814731)100:0.00622467135365646629)100:0.00066741705437332454,L.cuspidata:0.00813239743309578968)100:0.00191081530421778330)100:0.01605329963784126249,Entada_abyssinica:0.06221046688905558508)100:0.00484708757216597511):0.01387067266816046848,Microlobius_foetidus:0.01387067266816046848);
+
+#L.confertiflora-aden
+((Albizia_julibrissin:0.03238318246679164347,((((L.confertiflora-aden:0.00603748850437009141,L.cuspidata:0.00583922723350214102)100:0.00273698852919840958,((L.esculenta:0.00481016213379619091,(L.matudae:0.00481044175091680567,L.pueblana:0.00841865703639535674)100:0.00129012151452956195)100:0.00611207468802572873,((L.greggii:0.00717792237525064110,L.retusa:0.00772200561016475953)100:0.00277383312245298988,L.pulverulenta:0.00975896212037954784)100:0.00139312799967125211)100:0.00106442003273109925)100:0.00158999766826494935,(((((L.salvadorensis:0.00641786178474798748,L.shannonii:0.00500085347246317317)100:0.00103630067314748023,L.lempirana:0.00604864360436826228)100:0.00043395335700790761,(L.multicapitula:0.00640253736722586151,((L.cruziana:0.00501563192496220188,L.lanceolata:0.00490758187916843017)100:0.00094558530899036995,(L.trichodes:0.00502788370104280749,(L.macrophylla-mac:0.00248209418022124874,L.macrophylla-ist:0.00269848489691563954)100:0.00252545653510450252)100:0.00096135762007874294)100:0.00131924839195020024)100:0.00091353827536198840)100:0.00052214481525604214,((L.collinsii:0.00523853626030687265,L.zacapana:0.00512096107433965015)100:0.00145845359507796994,L.magnifica:0.00555798180043454246)100:0.00064733402666348897)100:0.00117284489256390097,L.trichandra:0.00390907809269715016)100:0.00553341970532350569)100:0.01612170087223313564,Entada_abyssinica:0.06180207274628816277)100:0.00486592697322552926):0.01380690644796027551,Microlobius_foetidus:0.01380690644796027551);
+
+#L.diversifolia
+((Albizia_julibrissin:0.03242668443780906407,(Entada_abyssinica:0.06190990677228046246,((L.trichandra:0.00390343337953754331,((L.magnifica:0.00556097550228313968,(L.collinsii:0.00524244952156573997,L.zacapana:0.00512524592374722764)100:0.00145950539299304722)100:0.00064597765318349270,((L.lempirana:0.00605259305265699182,(L.salvadorensis:0.00642314332089059109,L.shannonii:0.00500509994301606004)100:0.00103787277614689265)100:0.00043342138685297736,(L.multicapitula:0.00640810128637866669,((L.trichodes:0.00503232027125933169,(L.macrophylla-mac:0.00248377798861792532,L.macrophylla-ist:0.00270096945820849903)100:0.00252777983391224087)100:0.00096090681622022951,(L.cruziana:0.00501929093397896452,L.lanceolata:0.00491190331074219978)100:0.00094626919006224222)100:0.00132086797454661559)100:0.00091490728147590862)100:0.00052557908687583289)100:0.00118069169017823031)100:0.00566878098519662654,(L.cuspidata:0.00814693727041969178,(((L.pulverulenta:0.00742522455637702455,L.diversifolia:0.00726572933546327897)100:0.00301364212623285053,(L.greggii:0.00718326854343374812,L.retusa:0.00773795735043264314)100:0.00322580483899388704)100:0.00087678391561232436,(L.esculenta:0.00480245389590797187,(L.matudae:0.00481552412320679357,L.pueblana:0.00842590444345409952)100:0.00130509023873849302)100:0.00622290315118419288)100:0.00065936106239563067)100:0.00189432173546714945)100:0.01601759689880478607)100:0.00485796246023029871):0.01382294511462680599,Microlobius_foetidus:0.01382294511462680599);
+
+#L.leucocephala-gla
+((Albizia_julibrissin:0.03255808085082085440,(((L.trichandra:0.00392446138545979664,(((L.multicapitula:0.00642654447585771105,((L.cruziana:0.00503051062587247643,L.lanceolata:0.00492536456752938612)100:0.00094634564505424149,(L.trichodes:0.00504368684054333407,(L.macrophylla-mac:0.00248862394744216306,L.macrophylla-ist:0.00270711090015615923)100:0.00253326821445826710)100:0.00096289562334741347)100:0.00132053108580269416)100:0.00091482175755727246,(L.lempirana:0.00606725153365037396,(L.salvadorensis:0.00643839374800251382,L.shannonii:0.00501617786594159981)100:0.00103971622287354773)100:0.00043665171419997458)100:0.00052234334283111732,(L.magnifica:0.00557608115451929589,(L.collinsii:0.00525058989790981590,L.zacapana:0.00514085033300578764)100:0.00146241879844188493)100:0.00064727592991896952)100:0.00117307856055723532)100:0.00570680084683164446,(((L.esculenta:0.00479741846006661882,(L.matudae:0.00482519416393479509,L.pueblana:0.00844650527492526830)100:0.00131719620068694674)100:0.00622364036677498702,((L.greggii:0.00719586516586393030,L.retusa:0.00775796219614612731)100:0.00317335429575624087,(L.pulverulenta:0.00574590557588707754,L.leucocephala-gla:0.00735695687243842576)100:0.00464186041084195620)100:0.00091666100777199034)100:0.00066521171730428582,L.cuspidata:0.00813390794574721070)100:0.00191340867228777440)100:0.01605900169078153597,Entada_abyssinica:0.06223767048713776950)100:0.00484921049784874970):0.01387467480760310075,Microlobius_foetidus:0.01387467480760310075);
+
+#L.involucrata
+(((((L.trichandra:0.00390575378605712790,((L.magnifica:0.00556550619240149102,(L.collinsii:0.00524304198443561412,L.zacapana:0.00512911223422750622)100:0.00145880126998089964)100:0.00064794766932258494,((((L.trichodes:0.00503419521900359736,(L.macrophylla-ist:0.00270252780022379362,L.macrophylla-mac:0.00248412076147353812)100:0.00252854917800539357)100:0.00096118530838222322,(L.cruziana:0.00502196973973322285,L.lanceolata:0.00491348798771938568)100:0.00094648458685996952)100:0.00132076273750480859,L.multicapitula:0.00641167291906429883)100:0.00091670549812587505,((L.shannonii:0.00500990117339022035,L.salvadorensis:0.00642375830041404423)100:0.00103715654785866578,L.lempirana:0.00605760238970590517)100:0.00043036411653750634)100:0.00052393048462208609)100:0.00118077355493804818)100:0.00556159914128678910,((L.involucrata:0.00708820544320168562,(L.matudae:0.00516577837923361174,(L.esculenta:0.00487039783892486301,L.pueblana:0.00837382956052226679)73:0.00103704834909907999)100:0.00311895235994911731)100:0.00373363820221981170,((L.pulverulenta:0.00974672752834700347,(L.greggii:0.00718356808633293688,L.retusa:0.00773699653259126222)100:0.00278371834746432437)100:0.00151940159786636067,L.cuspidata:0.00824513882536733432)100:0.00071964487939312936)100:0.00178255262210904415)100:0.01611775890863739041,Entada_abyssinica:0.06199023071330746898)100:0.00486741626206138242,Albizia_julibrissin:0.03246675218099569910):0.01383346433782325566,Microlobius_foetidus:0.01383346433782325566);
+
+#L.pallida
+((Albizia_julibrissin:0.03245008335008696398,((((L.pallida:0.00575545720405125361,(L.pueblana:0.00835952791815560911,(L.matudae:0.00521301706479302806,L.esculenta:0.00514144929279733778)93:0.00102489117155526175)100:0.00266155154190876684)100:0.00398297244964010509,(((L.greggii:0.00717685984936803148,L.retusa:0.00773394673183082360)100:0.00278955255161285505,L.pulverulenta:0.00974561083844380574)100:0.00153120936070206149,L.cuspidata:0.00821353727232734462)100:0.00076009270450226314)100:0.00175821776373215094,(((L.magnifica:0.00556574304907935836,(L.collinsii:0.00523821753083275696,L.zacapana:0.00512719362272348860)100:0.00145692855581860091)100:0.00064862593044081392,((((L.lanceolata:0.00491111871608168517,L.cruziana:0.00501804797445368992)100:0.00094498191331680620,(L.trichodes:0.00503128846560310736,(L.macrophylla-ist:0.00270082660314846382,L.macrophylla-mac:0.00248260477206599340)100:0.00252663511403621120)100:0.00096182407841847084)100:0.00132035674813728797,L.multicapitula:0.00640700086225894517)100:0.00091451130233374692,((L.shannonii:0.00500389198920402241,L.salvadorensis:0.00642250129541549041)100:0.00103792603378322491,L.lempirana:0.00605110461726989565)100:0.00043342613003994029)100:0.00052194848093446071)100:0.00118707614803775828,L.trichandra:0.00389151947305576467)100:0.00554963958566911855)100:0.01610729592537350069,Entada_abyssinica:0.06195573902863706073)100:0.00486255241498415643):0.01382342267483802241,Microlobius_foetidus:0.01382342267483802241);
+
+
+#path to each of the trees needed for the next steps:
+$polyploid/Polyploid_RAX_tree/RAxML_bipartitions.$polyploid.24-loci   
+
+
+
+#collapse nodes for all loci 
+
+
+#script named = 29_locus_tree_run_collapse.sh
+for polyploid in L.leucocephala.23b.3s L.confertiflora-aden L.diversifolia L.leucocephala-gla L.involucrata L.pallida
+do 
+mkdir $polyploid/Phyparts1
+for i in STRG.9937
+do
+nw_ed $polyploid/RAxML_bipartitions.$i.1 'i & b<=50' o > $polyploid/Phyparts1/$i.50perc.tre
+done
+done
+
+
+
+##Octoploid Astral runs 
+##running astral on the diploid plus one polyploid trees.
+
+
+
+##NOTE - need to be ROOT to run astral for some reason
+
+for polyploid in L.leucocephala.23b.3s L.confertiflora-aden L.diversifolia L.leucocephala-gla L.involucrata L.pallida
+do
+java -jar /Programs/Astral/astral.5.6.2.jar -t 3 -i $polyploid/Phyparts1/Phyparts50/50percent-trees.tre -o $polyploid/Phyparts1/Phyparts50/50perc.Astral.speciestree.tre
+done
+
+
+for polyploid in L.leucocephala.23b.3s L.confertiflora-aden L.diversifolia L.leucocephala-gla L.involucrata L.pallida
+do
+echo $polyploid
+cat $polyploid/Phyparts1/Phyparts50/50perc.Astral.speciestree.tre
+done
+
+
+L.leucocephala.23b.3s
+(L.matudae,(L.pueblana,(L.esculenta,((L.cuspidata,((Entada_abyssinica,(Albizia_julibrissin,Microlobius_foetidus)1:0.9363673069052935)1:4.172763918129563,(L.trichandra,((L.magnifica,(L.zacapana,L.collinsii)1:0.4882023444716588)1:0.30438349158965683,((L.lempirana,(L.shannonii,L.salvadorensis)1:0.14865203111843775)1:0.14942169454333284,(L.multicapitula,((L.cruziana,L.lanceolata)1:0.21462972640287242,(L.trichodes,(L.macrophylla-mac,L.macrophylla-ist)1:1.486985881818358)1:0.37398808535486655)1:0.6213152884019726)1:0.25760702224872245)0.61:0.05446801938237853)1:0.19477183224743957)1:2.3857220408201996)1:0.605128065108393)0.92:0.06831558901214392,((L.pulverulenta,L.leucocephala.23b.3s)1:0.8308772140132175,(L.retusa,L.greggii)1:1.7542448913673419)1:0.3756106599693785)1:2.5691600283270835)0.98:0.047748191841960615));
+L.confertiflora-aden
+(L.lanceolata,(L.cruziana,((L.trichodes,(L.macrophylla-ist,L.macrophylla-mac)1:1.4664294725450844)1:0.3514894477327107,(L.multicapitula,((L.lempirana,(L.shannonii,L.salvadorensis)1:0.15462033665094696)1:0.12214441115512802,((L.magnifica,(L.zacapana,L.collinsii)1:0.5026858467567336)1:0.2714991166571387,(L.trichandra,((Entada_abyssinica,(Albizia_julibrissin,Microlobius_foetidus)1:0.9409939209178431)1:4.202752841563885,((L.cuspidata,L.confertiflora-aden)1:0.5602871921187873,((L.esculenta,(L.matudae,L.pueblana)0.95:0.043254005601420724)1:2.3974156210901008,((L.retusa,L.greggii)1:1.400986117100681,L.pulverulenta)1:0.8478905810540802)1:0.560785629871193)1:0.3585467751607332)1:2.540047713209572)1:0.24354507362836245)1:0.08416986387125945)1:0.2755314804350997)1:0.6811955127157566)1:0.23691440637866998));
+L.diversifolia
+(L.lanceolata,(L.cruziana,((L.trichodes,(L.macrophylla-mac,L.macrophylla-ist)1:1.44391685580094)1:0.33862571989202733,(L.multicapitula,((L.lempirana,(L.shannonii,L.salvadorensis)1:0.15229366908004544)1:0.11337843234333392,((L.magnifica,(L.zacapana,L.collinsii)1:0.4970969634753388)1:0.26922182504647685,(L.trichandra,((Entada_abyssinica,(Albizia_julibrissin,Microlobius_foetidus)1:0.9521186594979425)1:4.23716510547828,(((L.retusa,L.greggii)1:1.7034116760399503,(L.pulverulenta,L.diversifolia)1:0.5132620918906691)1:0.373683590961995,((L.esculenta,(L.matudae,L.pueblana)0.98:0.046252258207428336)1:2.374170171653405,L.cuspidata)0.83:0.06753909865839479)1:0.6338853089739656)1:2.4590153543842006)1:0.26220883835704883)1:0.08801965206716614)1:0.27039908481237224)1:0.6758690222458509)1:0.235380646551105));
+L.leucocephala-gla
+(L.collinsii,(L.zacapana,(L.magnifica,((L.lempirana,(L.shannonii,L.salvadorensis)1:0.14700227778639316)1:0.114916389662573,((L.multicapitula,((L.cruziana,L.lanceolata)1:0.21088847892969437,(L.trichodes,(L.macrophylla-mac,L.macrophylla-ist)1:1.4732840778506795)1:0.3821787521576162)1:0.6356676178070115)1:0.2956540363036493,(L.trichandra,((Entada_abyssinica,(Albizia_julibrissin,Microlobius_foetidus)1:0.9351148171197903)1:4.267234810535578,(L.cuspidata,((L.esculenta,(L.matudae,L.pueblana)0.99:0.053891484701007554)1:2.568587956890434,((L.greggii,L.retusa)1:1.7668838882360132,(L.pulverulenta,L.leucocephala-gla)1:0.7692067466354134)1:0.3718321569694355)0.99:0.08107838898014656)1:0.5702112351556968)1:2.44548150328008)1:0.245420749758844)0.81:0.06111269919554345)1:0.2629218242011579)1:0.48917805101590295));
+L.involucrata
+(L.multicapitula,(((L.cruziana,L.lanceolata)1:0.24596612560734762,(L.trichodes,(L.macrophylla-ist,L.macrophylla-mac)1:1.4535605078412985)1:0.34658068907160244)1:0.6875752889285015,((L.lempirana,(L.shannonii,L.salvadorensis)1:0.14293194980751742)1:0.12945697866268838,((L.magnifica,(L.collinsii,L.zacapana)1:0.490786681629827)1:0.2665276049122296,(L.trichandra,(((L.cuspidata,(L.pulverulenta,(L.retusa,L.greggii)1:1.391332155149848)1:0.9216882969895945)1:0.13407549616183567,(L.involucrata,(L.pueblana,(L.esculenta,L.matudae)0.96:0.04452953818821637)1:0.6470693232188991)1:0.7176663489355211)1:0.6106532125200953,(Entada_abyssinica,(Microlobius_foetidus,Albizia_julibrissin)1:0.95577278728274)1:4.156433695515721)1:2.480056495992496)1:0.276012579549361)1:0.07813169983632101)1:0.2758387310268501));
+L.pallida
+(Albizia_julibrissin,(Microlobius_foetidus,(Entada_abyssinica,((L.trichandra,((L.magnifica,(L.collinsii,L.zacapana)1:0.4997431808693123)1:0.27022733992849207,((L.lempirana,(L.shannonii,L.salvadorensis)1:0.14765272341922767)1:0.12439964382887446,(L.multicapitula,((L.lanceolata,L.cruziana)1:0.2417109399257901,(L.trichodes,(L.macrophylla-ist,L.macrophylla-mac)1:1.4434234877112737)1:0.35067539287099303)1:0.6713740443693227)1:0.27929925292884)1:0.08176082704420973)1:0.2681309851346147)1:2.540968045749024,((L.cuspidata,(L.pulverulenta,(L.greggii,L.retusa)1:1.3948860777352328)1:0.9287386309156294)1:0.10594074684906037,(L.pallida,((L.esculenta,L.matudae)0.89:0.042286721940634986,L.pueblana)1:0.5292317195170407)1:0.8563850348797633)1:0.6385397098182636)1:4.26648652624637)1:0.9339661359017991));
+
+
+
+
+###looking at phyparts with 50% cutoff...
+######
+
+for polyploid in L.leucocephala.23b.3s L.confertiflora-aden L.diversifolia L.leucocephala-gla L.involucrata L.pallida
+do 
+mkdir $polyploid/Phyparts1/Phyparts50
+cat $polyploid/Phyparts1/STRG.*.50perc.tre > $polyploid/Phyparts1/Phyparts50/50percent-trees.tre
+java -jar /Programs/phyparts/target/phyparts-0.0.1-SNAPSHOT-jar-with-dependencies.jar -a 1 -m /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/$polyploid/Polyploid_RAX_tree/RAxML_bipartitions.$polyploid.24-loci -d $polyploid/Phyparts1/Phyparts50/50percent-trees.tre -o $polyploid/Phyparts1/Phyparts50/$polyploid
+xvfb-run python /Programs/phypartspiecharts.py /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees/$polyploid/Polyploid_RAX_tree/RAxML_bipartitions.$polyploid.24-loci $polyploid/Phyparts1/Phyparts50/$polyploid 2252
+mv pies.svg $polyploid/Phyparts1/Phyparts50/$polyploid.pies50.svg
+done
+
+
+mkdir Pies/
+
+for polyploid in L.leucocephala.23b.3s L.confertiflora-aden L.diversifolia L.leucocephala-gla L.involucrata L.pallida
+do
+cp $polyploid/Phyparts1/Phyparts50/$polyploid.pies50.svg Pies/
+done
+
+
+
+
+
+
+
+#Part 7 - Adding the L. leuceocephala published genome data to the analyses.
+
+
+
+
+
+#######################################
+#Part 6 - Calculating the frequency with which any terminal is sister to any other terminal in a set of gene trees.
+#######################
+
+
+/media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Gene_trees
+
+##I had to add the "sed" portion to change name of leucocephala.23b.3s because of the numbering/naming issue... 
+
+ 
+
+for polyploid in L.leucocephala.23b.3s L.confertiflora-aden L.diversifolia L.leucocephala-gla L.involucrata L.pallida
+do
+echo $'\n'
+echo $polyploid
+cat $polyploid/Phyparts1/$polyploid.result.final.txt
+done
+
+L.confertiflora-aden
+collinsii, 5
+cuspidata, 1030
+greggii, 2
+lempirana, 4
+macrophyllaist, 1
+macrophyllamac, 1
+magnifica, 9
+multicapitula, 2
+pueblana, 3
+pulverulenta, 7
+retusa, 2
+salvadorensis, 1
+shannonii, 2
+trichandra, 50
+zacapana, 3
+
+L.diversifolia
+collinsii, 6
+cruziana, 3
+cuspidata, 5
+greggii, 8
+lempirana, 1
+macrophyllaist, 1
+macrophyllamac, 1
+magnifica, 12
+multicapitula, 1
+pueblana, 3
+pulverulenta, 1042
+retusa, 8
+salvadorensis, 4
+shannonii, 2
+trichandra, 55
+trichodes, 1
+zacapana, 5
+
+L.involucrata
+collinsii, 4
+cruziana, 1
+cuspidata, 2
+esculenta, 80
+greggii, 1
+lanceolata, 1
+lempirana, 2
+magnifica, 11
+matudae, 133
+multicapitula, 3
+pueblana, 284
+pulverulenta, 3
+retusa, 1
+salvadorensis, 4
+shannonii, 2
+trichandra, 52
+zacapana, 1
+
+L.leucocephala.23b.3s
+cruziana, 159
+cuspidata, 3
+esculenta, 2
+greggii, 1
+lanceolata, 6
+macrophyllaist, 2
+macrophyllamac, 3
+magnifica, 1
+multicapitula, 2
+pueblana, 2
+pulverulenta, 1330
+retusa, 1
+salvadorensis, 1
+shannonii, 7
+trichandra, 1
+trichodes, 4
+
+L.leucocephala-gla
+collinsii, 1
+cruziana, 150
+cuspidata, 3
+esculenta, 1
+greggii, 2
+lanceolata, 6
+macrophyllaist, 2
+macrophyllamac, 2
+magnifica, 2
+matudae, 1
+pueblana, 2
+pulverulenta, 1282
+retusa, 1
+salvadorensis, 3
+trichandra, 1
+trichodes, 2
+
+L.pallida
+collinsii, 1
+cuspidata, 3
+esculenta, 72
+greggii, 1
+lanceolata, 1
+lempirana, 3
+macrophyllamac, 2
+magnifica, 5
+matudae, 113
+multicapitula, 1
+pueblana, 390
+pulverulenta, 1
+salvadorensis, 1
+trichandra, 40
+zacapana, 5
+
+
+
+#########################################################################
+#Part 7 - Adding the L. leuceocephala published genome data to the analyses.
+#########################################################################
+
+
+
+
+#Adding in the Leucaena leucocephala published genome from  - https://www.cell.com/plant-communications/fulltext/S2590-3462(24)00214-1
+#The genomes of seven economic Caesalpinioideae trees provide insights into polyploidization history and secondary metabolite biosynthesis
+#Rong Chen1,2,4 � Sihan Meng2,4 � Anqi Wang2� � � Lihong Lei2,3 � Hengchao Wang2 � Wei Fan2 fanwei@caas.cn� Show more
+##doing this to see if the genomic data has more evidence of hybridization than the RNA sequence data - which is mostly 90:10 on the expression bias for one parent over another
+
+#first downloading the genome... 
+/media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/L_leuco_genomic_data/
+#getting the genome first from figshare - as told to do by the authors in email
+wget https://figshare.com/ndownloader/files/44172632
+mv 44172632 44172632.gz
+gzip -d 44172632.gz
+
+#now getting the annotations
+wget https://figshare.com/ndownloader/files/44172629
+ 2016  ll
+ 2017  mv 44172629 44172629.gz
+ 2018  gzip -d 44172629.gz
+ 2019  ll
+ 2020  mv 44172629 44172629.gff
+
+
+
+#now getting the cds sequences
+ wget https://figshare.com/ndownloader/files/44172626
+ 2026  l
+ 2027  ll
+ 2028  mv 44172626 44172626.gz
+ 2029  gzip -d 44172626.gz
+
+
+#Checked some of the cds and they really do seem to be cds and not genes... each one I checked had a full length ORF... even one with known introns. 
+ 2031  mv 44172626 44172626_cds.fa
+ 2032  less
+ 2033  less 44172626_cds.fa
+
+## so what I really need are the CDS sequences... so what to do...
+
+##outline of the plan:
+# recover just the L. trichandra transcript from each of 2252 STRG sequences.
+# turn the cds file into the blast database
+#search each L.trichandra sequences agains the CDS database
+#recover matching transcripts
+#add them to original STRG file
+#build trees
+#calculate parentage
+
+#Recover L trichandra sequence for blast
+ll ../ | grep STRG | cut -f9  | sed 's/ \+/\t/g' | cut -f9 | tr '\n' ' ' > STRG_list.txt
+mkdir STRG_trichandra
+mv STRG_list.txt STRG_trichandra/
+cd STRG_trichandra/
+
+#turning that list into a for loop
+mv STRG_list.txt STRG_list.txt.sh
+chmod ug+x mv STRG_list.txt STRG_list.txt.sh
+
+##here is the loop, abbreviated
+for i in STRG.1000.1.rename29.fa STRG.10015.1.rename29.fa STRG.10018.1.rename29.fa to be continued.... 
+do
+grep -A1 trichandra ../../$i > $i.trichandra
+done
+
+#makeblastdb in /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/L_leuco_genomic_data/
+makeblastdb -in 44172626_cds.fa -dbtype nucl
+
+##now make the loop to run 2252 blast searches
+
+grep -A1 trichandra ../../$i > $i.trichandra
+done
+
+#makeblastdb in /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/L_leuco_genomic_data/
+
+#make a for loop to run the blast analyses
+/media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/L_leuco_genomic_data/STRG_trichandra/
+
+ll | grep STRG | sed 's/ \+/\t/g' | cut -f9 | grep -v STRG_list.txt.sh | tr '\n' ' ' > Blast.sh
+chmod ug+x Blast.sh
+
+for i in ....
+do
+blastn -query $i -db ../44172626_cds.fa -outfmt "6 std sstrand qlen" -num_alignments 10 -out $i.blast
+done
+
+
+##filtering blast output.  plus in the last column means the match requires no change... minus in the last column need to reverse the sequence. Since these are CDS, I don't think we need to reverse complement, only reverse...
+## considerations - >90% similarity and 90% query length then plus and minus strand
+##actually as I looked over about 20 results - I see pairs, two very close matches and then two more very close matches.  Those look like paralogs from different parents.  So I am going to just try this with the top 4 hits in each case...
+
+for i in STRG.1000.1.rename29.fa.trichandra STRG.10015.1.rename29.fa.trichandra STRG.10018.1.rename29.fa.trichandra STRG.10023.1.rename29.fa.trichandra STRG.10029.1.rename29.fa.trichandra STRG.10066.1.rename29.fa.trichandra STRG.10081.1>
+do
+head -n4 $i.blast > $i.blast.top4
+done
+
+#checked some by aligning new sequences with the old and then looking at alignments.  Some a little weird, but generally seems to look like the fundamental data are ok to proceed.
+cp Blast_top4.sh Blast_top4_extraction.sh
+
+#editing that script
+for i in STRG.1000.1.rename29.fa.trichandra STRG.10015.1.rename29.fa.trichandra STRG.10018.1.rename29.fa.trichandra STRG.10023.1.rename29.fa.trichandra STRG.10029.1.rename29.fa.trichandra STRG.10066.1.rename29.fa.trichandra STRG.10081.1>
+do
+seqtk subseq ../44172626_cds.fa $i.blast.names.top4 | sed 's/ \+/_/g' > $i.trichandra.blast.names.top4.sequences
+done
+
+#that saved the top 4 sequences in an alignable format
+
+#need to check which have minus strand... but actually, only 26 transcripts out of 8826 total are in the wrong confirmation... not going to worry about it for this approach. 
+
+#next steps - save only tetraploid matrix for each STRG, then combine and align and building trees, etc.
+
+#save only tetraploid species for each STRG
+cd /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix
+ grep ">" STRG.9937.1.rename29.fa | sed 's/>//g' > recover_tetraploid_names.txt
+mv recover_tetraploid_names.txt L_leuco_genomic_data/
+cd L_leuco_genomic_data/
+#manually removed the six octoploid names from the recover_tetraploid_names.txt
+#making for loop to recover loci with only tetraploid terminals
+ll ../ | grep rename | sed 's/ \+/\t/g' | cut -f9 | tr '\n' ' ' > recover_tetraplid_matrix.sh
+mkdir Tetraploid_matrices/ 
+
+#sample of the for loop
+for i in STRG.1000.1.rename29.fa STRG.10015.1.rename29.fa STRG.10018.1.rename29.fa STRG.10023.1.rename29.fa STRG.10029.1.rename29.fa S>
+do
+seqtk subseq ../$i  recover_tetraploid_names.txt > Tetraploid_matrices/$i.2.fa
+done
+
+chmod +x recover_tetraplid_matrix.sh
+./recover_tetraplid_matrix.sh
+
+#now I want to add the new octoploid sequences from L. leucocephala genomic data to the tetraploid matrix - perhaps I should have changed names, but this is ok...
+# file merge_tetra_4octoploid.sh
+
+for i in STRG.1000.1.rename29.fa STRG.10015.1.rename29.fa STRG.10018.1.rename29.fa STRG.10023.1.rename29.fa STRG.10029.1.rename29.fa S>
+do
+cat STRG_trichandra/$i.trichandra.trichandra.blast.names.top4.sequences >> Tetraploid_matrices/$i.2.fa
+done
+
+#results - this is the number of loci with all 54 expected lines (23 tetraploid species plus 4 L. leucocephala sequences - 2 lines each)
+wc -l * | sed 's/^ \+//g' | sort -r | cut -f1 -d " " | uniq -c
+ 2165 54
+     39 52
+     28 50
+     13 48
+      7 46
+
+#ready to align these
+cp merge_tetra_4octoploid.sh align_sequences.sh
+
+#script
+for i in STRG.1000.1.rename29.fa STRG.10015.1.rename29.fa STRG.10018.1.rename29.fa STRG.10023.1.rename29.fa STRG.10029.1.rename29.fa S>
+do
+muscle -in Tetraploid_matrices/$i.2.fa -out Tetraploid_matrices/$i.2.align.fa
+done
+
+#convert fasta to phylip
+#Script convert_to_phylip.sh
+for i in STRG.1000.1.rename29.fa STRG.10015.1.rename29.fa STRG.10018.1.rename29.fa STRG.10023.1.rename29.fa STRG.10029.1.rename29.fa S>
+do
+/Programs/Fasta2phylip.pl Tetraploid_matrices/$i.2.align.fa Tetraploid_matrices/$i.2.align.fa.phy
+done
+
+
+#build gene trees
+#script gene-trees.sh
+
+mv gene-trees.sh Tetraploid_matrices/
+
+split into two jobs, each with roughly half the sequences:
+
+gene-trees1.sh
+for i in STRG.1000.1.rename29.fa STRG.10015.1.rename29.fa STRG.10018.1.rename29.fa STRG.10023.1.rename29.fa STRG.10029.1.rename29.fa S>
+do
+raxmlHPC -f a -T 2 -m GTRCAT -p 12345 -x 12345 -# 100 -s $i.2.align.fa.phy -n $i.1 -o Microlobius_foetidus
+rm $i.2.align.fa.phy.reduced
+done
+
+gene-trees2.sh
+for i in 
+do
+raxmlHPC -f a -T 2 -m GTRCAT -p 12345 -x 12345 -# 100 -s $i.2.align.fa.phy -n $i.1 -o Microlobius_foetidus
+rm $i.2.align.fa.phy.reduced
+done
+
+#repeated for gene-trees2-6... all running
+
+
+
+#result - only 1893 finished... guessing I screwed something up...
+
+
+####collapse poorly supported nodes in all loci... 
+#/media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/L_leuco_genomic_data/
+cp align_sequences.sh collapse.sh
+
+
+#script named = 29_locus_tree_run_collapse.sh
+for i in STRG.1000.1.rename29.fa STRG.10015.1.rename29.fa STRG.10018.1.rename29.fa STRG.10023.1.rename29.fa STRG.10029.1.rename29.fa STRG.10066.1.rename29.fa STRG.10081.1.rename29.fa STRG.10087.1.rename29.fa STRG.10111.1.rename29.fa STR>
+do
+nw_ed Tetraploid_matrices/RAxML_bipartitions.$i.1 'i & b<=50' o > Tetraploid_matrices/$i.50.percent.tre
+done
+
+#1893 genes have collapsed trees.
+
+
+#I used chatgpt to figure out how I will replace names with something simple to calculate things
+
+#This finds strings beginning with Lleu then removes anything until the next underscore. 
+#sed 's/\(Lleu\)[^_]*_/\1/g' Tetraploid_matrices/RAxML_bestTree.STRG.9650.1.rename29.fa.1
+#rename.sh
+
+for i in STRG.1000.1.rename29.fa STRG.10015.1.rename29.fa STRG.10018.1.rename29.fa STRG.10023.1.rename29.fa STRG.10029.1.rename29.fa STRG.10066.1.rename29.fa STRG.10081.1.rename29.fa STRG.10087.1.rename29.fa STRG.10111.1.rename29.fa STR>
+do
+sed 's/\(Lleu\)[^_]*_/\1/g' Tetraploid_matrices/$i.50.percent.tre > Tetraploid_matrices/$i.50.percent.rename.tre
+done
+
+
+#now for the calculations
+
+#pairwise_comparison.sh
+for species in Microlobius_foetidus Entada_abyssinica Albizia_julibrissin L.collinsii L.cuspidata L.esculenta L.greggii L.lanceolata L.lempirana L.macrophylla-mac L.macrophylla-ist L.cruziana L.magnifica L.multicapitula L.matudae L.pueblana L.pulverulenta L.retusa L.salvadorensis L.shannonii L.trichodes L.trichandra L.zacapana Lleu
+do 
+#the first two calculate how often Lleu is next to diploid (Lleu,diploid) or (diploid,Lleu)
+sed 's/[0-9]//g' Tetraploid_matrices/*rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1target','[a-zA-Z]*2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/[0-9]//g' Tetraploid_matrices/*rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1[a-zA-Z]*','target2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+#the second two calculate how often a diploid is next to a pair of Lleu loci  diploid(Lleu, Llue) or (Lleu,Lleu)diploid
+sed 's/[0-9]//g' Tetraploid_matrices/*rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1[a-zA-Z]*','1target,target22 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/[0-9]//g' Tetraploid_matrices/*rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 11target,target2','[a-zA-Z]*2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+#the third set calculates (diploid(Lleu(Lleu,Lleu))) and (((Lleu,Llue)Lleu)diploid) - other topologies are captured in the subset scripts above.
+sed 's/[0-9]//g' Tetraploid_matrices/*rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1[a-zA-Z]*','1target,1target,target222 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/[0-9]//g' Tetraploid_matrices/*rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 111target,target2,target2','[a-zA-Z]*2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+#the fourth calcuates (diploid(Lleu(Lleu(Lleu,Lleu)))) and ((((Lleu,Lleu)Lleu)Lleu)diploid)
+sed 's/[0-9]//g' Tetraploid_matrices/*rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1[a-zA-Z]*','1target,1target,1target,target2222 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/[0-9]//g' Tetraploid_matrices/*rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1111target,target2,target2,target2','[a-zA-Z]*2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+#below summarizes for the final result
+sed 's/^ \+//g' Pairwise_result/$species.result.txt | sed 's/ /\t/g' | awk 'BEGIN {OFS="\t"} {gsub(/[12]/, "", $2); print}' | sed 's/target//g' | sed 's/,\+//g' | sort -k2 | awk -F"\t" 'BEGIN {OFS="\t"} {sum[$2] += $1} END {for (item in sum) print item, sum[item]}' | sort > Pairwise_result/$species.result.final.txt
+done
+
+#This is the result for Lleu relatioships
+Albiziajulibrissin      12
+Entadaabyssinica        75
+Lcollinsii      16
+Lcruziana       809
+Lcuspidata      25
+Lesculenta      7
+Lgreggii        18
+Llanceolata     54
+Llempirana      12
+Lmacrophyllaist 28
+Lmacrophyllamac 22
+Lmagnifica      10
+Lmatudae        7
+Lmulticapitula  12
+Lpueblana       30
+Lpulverulenta   1453
+Lretusa 15
+Lsalvadorensis  36
+Lshannonii      13
+Ltrichandra     53
+Ltrichodes      29
+Lzacapana       7
+
+
+
+
+
+####Now repeat the step above for the polyploid de novo assembled transcripts...
+#mkdir Polyploid_de_novo_transcript/
+
+#/media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/Polyploid_de_novo_transcript
+
+rsync -arvz -e 'ssh -p 4852' baileyd@128.123.95.198:/data/Archive/transcriptomes/L_pallida.Trinity.3seedling.Summer2015.namedContigs.fasta .
+rsync -arvz -e 'ssh -p 4852' baileyd@128.123.95.198:/data/Archive/transcriptomes/L_leuco-leuco.Trinity.3seedling.Summer2015.namedContigs.fasta .
+rsync -arvz -e 'ssh -p 4852' baileyd@128.123.95.198:/data/Archive/transcriptomes/L_leuco-glabrata.Trinity.3seedling.Summer2015.namedContigs.fasta .
+
+rsync -arvz -e 'ssh -p 4852' baileyd@128.123.95.198:/data/Archive/transcriptomes/L_involucrata.Trinity.3seedling.Summer2015.namedContigs.fasta .
+
+rsync -arvz -e 'ssh -p 4852' baileyd@128.123.95.198:/data/Archive/transcriptomes/L_diversifolia.Trinity.3seedling.Summer2015.namedContigs.fasta .
+
+rsync -arvz -e 'ssh -p 4852' baileyd@128.123.95.198:/data/Archive/transcriptomes/L_confertiflora-adeno.Trinity.3seedling.Summer2015.namedContigs.fasta .
+
+#making directory systems
+mkdir L_confertiflora-adeno
+mv L_confertiflora-adeno.Trinity.3seedling.Summer2015.namedContigs.fasta L_confertiflora-adeno
+mkdir L_diversifolia
+mv L_diversifolia.Trinity.3seedling.Summer2015.namedContigs.fasta L_diversifolia
+mkdir L_involucrata
+mv L_involucrata.Trinity.3seedling.Summer2015.namedContigs.fasta L_involucrata
+mkdir L_leuco-glabrata
+mv L_leuco-glabrata.Trinity.3seedling.Summer2015.namedContigs.fasta L_leuco-glabrata
+mkdir L_leuco-leuco
+mv L_leuco-leuco.Trinity.3seedling.Summer2015.namedContigs.fasta L_leuco-leuco
+mkdir L_pallida
+mv L_pallida.Trinity.3seedling.Summer2015.namedContigs.fasta L_pallida
+
+
+#to make this easy, I've renamed all transript files within each folder to "transcripts.fa" - this will make automation easier later.
+#need to make a blast index for the transcripts for each species
+
+for i in L_confertiflora-adeno L_diversifolia L_involucrata L_leuco-glabrata L_leuco-leuco L_pallida
+do
+makeblastdb -in $i/transcripts.fa -dbtype nucl
+done
+
+
+#I already have the target L.trichandra sequence for each STRG for looking into the L. leuco genome data (above).
+#these are in this folder #/media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/L_leuco_genomic_data/STRG_trichandra
+#and they have a file name that looks like this:
+#STRG.9937.1.rename29.fa.trichandra
+
+#get the list of STRG names from before
+mv STRG_list.txt.sh ../../Polyploid_de_novo_transcript/blast_search.sh
+
+#modifying to run the blast searches in each folder.  A quick look at most results suggests I only want to save 2-3 sequences per blast search... 
+
+for i in L_confertiflora-adeno L_diversifolia L_involucrata L_leuco-glabrata L_leuco-leuco L_pallida
+do
+for k in STRG.1000.1.rename29.fa STRG.10015.1.rename29.fa STRG.10018.1.rename29.fa STRG.10023.1.rename29.fa STRG.10029.1.rename29.fa STRG.10066.1.rename29.fa STRG.10081.1.rename29.fa STRG.10087.1.rename29.fa STRG.10111.1.rename29.fa STR>
+do
+blastn -query /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/29Locus_files/29Locus_matrix/L_leuco_genomic_data/STRG_trichandra/$k.trichandra -db $i/transcripts.fa -outfmt "6 std sstrand qlen" -num_alignments 10 -out $i/$k.blastdone
+done
+done
+
+
+#filtering blast hits for the top 4 and recover sequences - based on the idea that 4 is the max we expect interms of loci in the octoploid.  adding a filter for alignments >= 500bp.  also filtering to help avoid adding the same sequence twice, but that part is imperfect.
+#also creating the list of 4 names for later
+#filter_blast.sh
+
+for i in L_confertiflora-adeno #L_diversifolia L_involucrata L_leuco-glabrata L_leuco-leuco L_pallida
+do
+for k in STRG.1000.1.rename29.fa.trichandra STRG.10015.1.rename29.fa.trichandra STRG.10018.1.rename29.fa.trichandra STRG.10023.1.rename29.fa.trichandra STRG.10029.1.rename29.fa.trichandra STRG.10066.1.rename29.fa.trichandra STRG.10081.1>
+do
+awk  '$4>=500' $i/$k.blastdone | sort -nrk3,4 | head -n4 > $i/$k.blastdone.top4
+grep plus $i/$k.blastdone.top4 | cut -f2 | sort | uniq > $i/$k.blastdone.top4.plus.names
+grep minus $i/$k.blastdone.top4 | cut -f2 |sort | uniq > $i/$k.blastdone.top4.minus.names
+seqtk subseq $i/transcripts.fa $i/$k.blastdone.top4.plus.names > $i/$k.top4.fasta
+seqtk subseq $i/transcripts.fa $i/$k.blastdone.top4.minus.names | seqtk seq -r  >> $i/$k.top4.fasta
+done
+done
+
+#browsing through L. confertiflora before cutting -f2, that result looks logical - it has saved best hits in terms of percent and length.
+
+
+
+
+#create matrices for alignment
+mkdir Tetraploid_matrices
+./Tetraploid_matrices/recover_tetraplid_matrix2.sh
+
+for i in STRG.1000.1.rename29.fa STRG.10015.1.rename29.fa STRG.10018.1.rename29.fa STRG.10023.1.rename29.fa STRG.10029.1.rename29.fa S>
+do
+seqtk subseq ../../$i recover_tetraploid_names.txt > $i.2.fa
+done
+
+#merge 23diploid sequences with tetraploid sequences
+mkdir Matrices_for_alignment
+
+cp filter_blast.sh merge_matrices.sh
+
+for i in L_confertiflora-adeno L_diversifolia L_involucrata L_leuco-glabrata L_leuco-leuco L_pallida
+do
+for k in STRG.1000.1.rename29.fa STRG.10015.1.rename29.fa STRG.10018.1.rename29.fa STRG.10023.1.rename29.fa STRG.10029.1.rename29.fa S>
+do
+cat Tetraploid_matrices/$k.2.fa $i/$k.top4.fasta > $i/$k.merged.fa
+done
+done
+
+#now for alignment
+
+cp merge_matrices.sh alignment.sh
+./alignment.sh
+
+for i in L_confertiflora-adeno L_diversifolia L_involucrata L_leuco-glabrata L_leuco-leuco L_pallida
+do
+for k in STRG.1000.1.rename29.fa STRG.10015.1.rename29.fa STRG.10018.1.rename29.fa STRG.10023.1.rename29.fa STRG.10029.1.rename29.fa S>
+do
+muscle -in $i/$k.merged.fa -out $i/$k.aligned.fa
+done
+done
+
+
+#10/31/24 - all aligned and ready... 
+Tested RAXML and there are characters in the tetraploid names that are not compatible...
+
+##
+#TRIMAL - adding a trimmed version - so we have trimal trimmed alignments and untrimmed alignments to reduce short branches
+for i in L_confertiflora-adeno L_diversifolia L_involucrata L_leuco-glabrata L_leuco-leuco L_pallida
+do
+for k in STRG.1000.1.rename29.fa STRG.10015.1.rename29.fa STRG.10018.1.rename29.fa STRG.10023.1.rename29.fa STRG.10029.1.rename29.fa S>
+do
+trimal -automated1 -in $i/$k.aligned.fa -out $i/$k.aligned.trimmed.fa
+done
+done
+
+
+#phy_conversion_RAxML_confert.sh
+#script below is an example, but each species has a script with final outputs including a species ID (e.g., the other species I added specific epithets to the output - example here for L_confertiflora "RAxML_bipartitions.$k.con.tre")
+
+for i in L_confertiflora-adeno # L_diversifolia L_involucrata L_leuco-glabrata L_leuco-leuco L_pallida
+do
+for k in STRG.1000.1.rename29.fa STRG.10015.1.rename29.fa STRG.10018.1.rename29.fa STRG.10023.1.rename29.fa STRG.10029.1.rename29.fa S>
+do
+/Programs/Fasta2phylip.pl $i/$k.aligned.fa  $i/$k.aligned.fa.phy
+raxmlHPC -f a -T 2 -m GTRCAT -p 12345 -x 12345 -# 100 -s $i/$k.aligned.fa.phy -n $k.con.tre -o Microlobius_foetidus
+mv RAxML_bestTree.$k.con.tre $i/
+mv RAxML_bipartitionsBranchLabels.$k.con.tre $i/
+mv RAxML_bipartitions.$k.con.tre $i/
+mv RAxML_bootstrap.$k.con.tre $i/
+mv RAxML_info.$k.con.tre $i/
+done
+done
+
+#for the trimmed run example - phy_conversion_RAxML_confert.trimmed.sh
+for i in L_confertiflora-adeno # L_diversifolia L_involucrata L_leuco-glabrata L_leuco-leuco L_pallida
+do
+for k in STRG.1000.1.rename29.fa STRG.10015.1.rename29.fa STRG.10018.1.rename29.fa STRG.10023.1.rename29.fa STRG.10029.1.rename29.fa S>
+do
+/Programs/Fasta2phylip.pl $i/$k.aligned.trimmed.fa  $i/$k.aligned.trimmed.fa.phy
+raxmlHPC -f a -T 2 -m GTRCAT -p 12345 -x 12345 -# 100 -s $i/$k.aligned.trimmed.fa.phy -n $k.trimmed.con.tre -o Microlobius_foetidus
+mv RAxML_bestTree.$k.trimmed.con.tre $i/
+mv RAxML_bipartitionsBranchLabels.$k.trimmed.con.tre $i/
+mv RAxML_bipartitions.$k.trimmed.con.tre $i/
+mv RAxML_bootstrap.$k.trimmed.con.tre $i/
+mv RAxML_info.$k.trimmed.con.tre $i/
+done
+done
+
+
+
+
+
+
+#Collapse unsupported nodes, reduce names, and then compile results.
+
+
+#I used chatgpt to figure out how I will replace names with something simple to calculate things
+#This is what I asked chatgpt
+#I have a large text file and without that file are words or strings that look like the list below.
+#L_confertiflora_adeno_c67075_g2_i1
+#L_confertiflora_adeno_c61174_g6_i1
+#L_confertiflora_adeno_c66428_g1_i2
+#L_confertiflora_adeno_c73884_g1_i2
+#L_confertiflora_adeno_c0_g1_i1
+#L_confertiflora_adeno_c20_g1_i1
+#L_confertiflora_adeno_c114_g1_i1
+#L_confertiflora_adeno_c1184_g1_i1
+#they can occure on the same line or different lines. I would like to change all these strings so that they keep the L_confertiflora_adeno but delete all the info after that - the string ends with a : character
+
+
+#This finds strings beginning with the species then removes anything until the colon that indicates beginning of branch length. 
+sed -E 's/(L_confertiflora_adeno)[^:]*:/\1:/g' input.txt > output.txt
+
+#collapse_nodes_and_rename.sh
+for i in L_confertiflora-adeno #L_diversifolia #L_leuco-glabrata L_leuco-leuco L_pallida #L_involucrata
+do
+for k in STRG.1000.1.rename29.fa STRG.10015.1.rename29.fa STRG.10018.1.rename29.fa STRG.10023.1.rename29.fa STRG.10029.1.rename29.fa S>
+do
+nw_ed $i/RAxML_bipartitions.$k.con.tre 'i & b<=50' o > $i/$k.50.percent.tre
+sed -E 's/(L_confertiflora_adeno)[^:]*:/\1:/g' $i/$k.50.percent.tre > $i/$k.50.percent.rename.tre
+#cat $i/*50.percent.rename.tre >> $i/All.percent.rename.tre
+nw_ed $i/RAxML_bipartitions.$k.trimmed.con.tre 'i & b<=50' o > $i/$k.50.trimmed.percent.tre
+sed -E 's/(L_confertiflora_adeno)[^:]*:/\1:/g' $i/$k.50.trimmed.percent.tre > $i/$k.50.trimmed.percent.rename.tre
+cat $i/$k.50.trimmed.percent.rename.tre >> $i/All.trimmed.percent.rename.tre
+done
+done
+
+
+#now for diversifolia - required some tweaks for species names and file names
+#collapse_nodes_and_rename2.sh
+for i in L_diversifolia #L_leuco-glabrata L_leuco-leuco L_pallida #L_involucrata
+do
+for k in STRG.1000.1.rename29.fa STRG.10015.1.rename29.fa STRG.10018.1.rename29.fa STRG.10023.1.rename29.fa STRG.10029.1.rename29.fa S>
+do
+nw_ed $i/RAxML_bipartitions.$k.div.tre 'i & b<=50' o > $i/$k.50.percent.tre
+sed -E 's/(L_diversifolia)[^:]*:/\1:/g' $i/$k.50.percent.tre > $i/$k.50.percent.rename.tre
+#cat $i/*50.percent.rename.tre >> $i/All.percent.rename.tre
+nw_ed $i/RAxML_bipartitions.$k.trimmed.div.tre 'i & b<=50' o > $i/$k.50.trimmed.percent.tre
+sed -E 's/(L_diversifolia)[^:]*:/\1:/g' $i/$k.50.trimmed.percent.tre > $i/$k.50.trimmed.percent.rename.tre
+cat $i/$k.50.trimmed.percent.rename.tre >> $i/All.trimmed.percent.rename.tre
+done
+done
+
+
+#now for L. involucrata
+#collapse_nodes_and_rename3.sh
+for i in L_involucrata #L_pallida
+do
+for k in STRG.1000.1.rename29.fa STRG.10015.1.rename29.fa STRG.10018.1.rename29.fa STRG.10023.1.rename29.fa STRG.10029.1.rename29.fa S>
+do
+nw_ed $i/RAxML_bipartitions.$k.inv.tre 'i & b<=50' o > $i/$k.50.percent.tre
+sed -E 's/(L_involucrata)[^:]*:/\1:/g' $i/$k.50.percent.tre > $i/$k.50.percent.rename.tre
+#cat $i/*50.percent.rename.div.tre >> $i/All.percent.rename.tre
+nw_ed $i/RAxML_bipartitions.$k.trimmed.inv.tre 'i & b<=50' o > $i/$k.50.trimmed.percent.tre
+sed -E 's/(L_involucrata)[^:]*:/\1:/g' $i/$k.50.trimmed.percent.tre > $i/$k.50.trimmed.percent.rename.tre
+cat $i/$k.50.trimmed.percent.rename.tre >> $i/All.trimmed.percent.rename.tre
+done
+done
+
+#now for L. pallida
+#collapse_nodes_and_rename4.sh
+for i in L_pallida
+do
+for k in STRG.1000.1.rename29.fa STRG.10015.1.rename29.fa STRG.10018.1.rename29.fa STRG.10023.1.rename29.fa STRG.10029.1.rename29.fa S>
+do
+nw_ed $i/RAxML_bipartitions.$k.pall.tre 'i & b<=50' o > $i/$k.50.percent.tre
+sed -E 's/(L_pallida)[^:]*:/\1:/g' $i/$k.50.percent.tre > $i/$k.50.percent.rename.tre
+#cat $i/*50.percent.rename.pal.tre >> $i/All.percent.rename.tre
+nw_ed $i/RAxML_bipartitions.$k.trimmed.pall.tre 'i & b<=50' o > $i/$k.50.trimmed.percent.tre
+sed -E 's/(L_pallida)[^:]*:/\1:/g' $i/$k.50.trimmed.percent.tre > $i/$k.50.trimmed.percent.rename.tre
+cat $i/$k.50.trimmed.percent.rename.tre >> $i/All.trimmed.percent.rename.tre
+done
+done
+
+
+
+#now L_leuco-glabrata
+#collapse_nodes_and_rename5.sh
+for i in L_leuco-glabrata
+do
+for k in STRG.1000.1.rename29.fa STRG.10015.1.rename29.fa STRG.10018.1.rename29.fa STRG.10023.1.rename29.fa STRG.10029.1.rename29.fa S>
+do
+nw_ed $i/RAxML_bipartitions.$k.gla.tre 'i & b<=50' o > $i/$k.50.percent.tre
+sed -E 's/(L_leuco_glabrata)[^:]*:/\1:/g' $i/$k.50.percent.tre > $i/$k.50.percent.rename.tre
+#cat $i/*50.percent.rename.gla.tre >> $i/All.percent.rename.tre
+nw_ed $i/RAxML_bipartitions.$k.trimmed.gla.tre 'i & b<=50' o > $i/$k.50.trimmed.percent.tre
+sed -E 's/(L_leuco_glabrata)[^:]*:/\1:/g' $i/$k.50.trimmed.percent.tre > $i/$k.50.trimmed.percent.rename.tre
+cat $i/$k.50.trimmed.percent.rename.tre >> $i/All.trimmed.percent.rename.tre
+done
+done
+
+
+#now L_leuco-leuco
+#collapse_nodes_and_rename6.sh
+for i in L_leuco-leuco
+do
+for k in STRG.1000.1.rename29.fa STRG.10015.1.rename29.fa STRG.10018.1.rename29.fa STRG.10023.1.rename29.fa STRG.10029.1.rename29.fa S>
+do
+nw_ed $i/RAxML_bipartitions.$k.leu.tre 'i & b<=50' o > $i/$k.50.percent.tre
+sed -E 's/(L_leuco_leuco)[^:]*:/\1:/g' $i/$k.50.percent.tre > $i/$k.50.percent.rename.tre
+#cat $i/*50.percent.rename.leu.tre >> $i/All.percent.rename.tre
+nw_ed $i/RAxML_bipartitions.$k.trimmed.leu.tre 'i & b<=50' o > $i/$k.50.trimmed.percent.tre
+sed -E 's/(L_leuco_leuco)[^:]*:/\1:/g' $i/$k.50.trimmed.percent.tre > $i/$k.50.trimmed.percent.rename.tre
+cat $i/$k.50.trimmed.percent.rename.tre >> $i/All.trimmed.percent.rename.tre
+done
+done
+
+#################################
+#now calculating pairwise relationships as I did above with custom scriptsWhen calculating the next set of results, need to consider L.pul(leu(leu,leu) like resutls...
+
+#now for the calculations
+#L confertiflora first
+#copied the pairwise command from L_leuco_genomic work and moved to L_confertiflora folder.  Added L_confert proper name to the list]
+mkdir Pairwise_result/
+
+#./pairwise_comparison.sh
+for species in Microlobius_foetidus Entada_abyssinica Albizia_julibrissin L.collinsii L.cuspidata L.esculenta L.greggii L.lanceolata L.lempirana L.macrophylla-mac L.macrophylla-ist L.cruziana L.magnifica L.multicapitula L.matudae L.pueblana L.pulverulenta L.retusa L.salvadorensis L.shannonii L.trichodes L.trichandra L.zacapana L_confertiflora_adeno
+do
+#the first two calculate how often Lleu is next to diploid (Lleu,diploid) or (diploid,Lleu)
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1target','[a-zA-Z]*2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1[a-zA-Z]*','target2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+#the second two calculate how often a diploid is next to a pair of Lleu loci  diploid(Lleu, Llue) or (Lleu,Lleu)diploid
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1[a-zA-Z]*','1target,target22 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 11target,target2','[a-zA-Z]*2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+#the third set calculates (diploid(Lleu(Lleu,Lleu))) and (((Lleu,Llue)Lleu)diploid) - other topologies are captured in the subset scripts above.
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1[a-zA-Z]*','1target,1target,target222 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 111target,target2,target2','[a-zA-Z]*2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+#the fourth calcuates (diploid(Lleu(Lleu(Lleu,Lleu)))) and ((((Lleu,Lleu)Lleu)Lleu)diploid)
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1[a-zA-Z]*','1target,1target,1target,target2222 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1111target,target2,target2,target2','[a-zA-Z]*2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/^ \+//g' Pairwise_result/$species.result.txt | sed 's/ /\t/g' | awk 'BEGIN {OFS="\t"} {gsub(/[12]/, "", $2); print}' | sed 's/target//g' | sed 's/,\+//g' | sort -k2 | awk -F"\t" 'BEGIN {OFS="\t"} {sum[$2] += $1} END {for (item in sum) print item, sum[item]}' | sort  > Pairwise_result/$species.result.final.txt
+done
+
+
+#confertiflora result:
+Albiziajulibrissin      6
+Entadaabyssinica        76
+Lcollinsii      5
+Lcruziana       6
+Lcuspidata      258
+Lesculenta      2
+Lgreggii        3
+Llanceolata     3
+Llempirana      3
+Lmacrophyllaist 3
+Lmacrophyllamac 6
+Lmagnifica      11
+Lmatudae        3
+Lmulticapitula  4
+Lpueblana       10
+Lpulverulenta   8
+Lretusa 6
+Lsalvadorensis  15
+Ltrichandra     86
+Ltrichodes      4
+Lzacapana       5
+
+
+
+##L. diversifolia
+mkdir Pairwise_result/
+###
+for species in Microlobius_foetidus Entada_abyssinica Albizia_julibrissin L.collinsii L.cuspidata L.esculenta L.greggii L.lanceolata L.lempirana L.macrophylla-mac L.macrophylla-ist L.cruziana L.magnifica L.multicapitula L.matudae L.pueblana L.pulverulenta L.retusa L.salvadorensis L.shannonii L.trichodes L.trichandra L.zacapana L_diversifolia
+do
+#the first two calculate how often Lleu is next to diploid (Lleu,diploid) or (diploid,Lleu)
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1target','[a-zA-Z]*2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1[a-zA-Z]*','target2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+#the second two calculate how often a diploid is next to a pair of Lleu loci  diploid(Lleu, Llue) or (Lleu,Lleu)diploid
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1[a-zA-Z]*','1target,target22 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 11target,target2','[a-zA-Z]*2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+#the third set calculates (diploid(Lleu(Lleu,Lleu))) and (((Lleu,Llue)Lleu)diploid) - other topologies are captured in the subset scripts above.
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1[a-zA-Z]*','1target,1target,target222 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 111target,target2,target2','[a-zA-Z]*2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+#the fourth calcuates (diploid(Lleu(Lleu(Lleu,Lleu)))) and ((((Lleu,Lleu)Lleu)Lleu)diploid)
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1[a-zA-Z]*','1target,1target,1target,target2222 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1111target,target2,target2,target2','[a-zA-Z]*2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/^ \+//g' Pairwise_result/$species.result.txt | sed 's/ /\t/g' | awk 'BEGIN {OFS="\t"} {gsub(/[12]/, "", $2); print}' | sed 's/target//g' | sed 's/,\+//g' | sort -k2 | awk -F"\t" 'BEGIN {OFS="\t"} {sum[$2] += $1} END {for (item in sum) print item, sum[item]}' | sort  > Pairwise_result/$species.result.final.txt
+done
+
+
+#result
+Albiziajulibrissin      11
+Entadaabyssinica        45
+Lcollinsii      10
+Lcruziana       8
+Lcuspidata      8
+Lesculenta      2
+Lgreggii        7
+Llanceolata     3
+Llempirana      8
+Lmacrophyllaist 2
+Lmacrophyllamac 3
+Lmagnifica      15
+Lmatudae        3
+Lmulticapitula  5
+Lpueblana       9
+Lpulverulenta   257
+Lretusa 6
+Lsalvadorensis  24
+Lshannonii      3
+Ltrichandra     91
+Ltrichodes      3
+Lzacapana       5
+
+
+####L. leuco gla
+mkdir Pairwise_result/
+
+for species in Microlobius_foetidus Entada_abyssinica Albizia_julibrissin L.collinsii L.cuspidata L.esculenta L.greggii L.lanceolata L.lempirana L.macrophylla-mac L.macrophylla-ist L.cruziana L.magnifica L.multicapitula L.matudae L.pueblana L.pulverulenta L.retusa L.salvadorensis L.shannonii L.trichodes L.trichandra L.zacapana L_leuco_glabrata
+do
+#the first two calculate how often Lleu is next to diploid (Lleu,diploid) or (diploid,Lleu)
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1target','[a-zA-Z]*2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1[a-zA-Z]*','target2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+#the second two calculate how often a diploid is next to a pair of Lleu loci  diploid(Lleu, Llue) or (Lleu,Lleu)diploid
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1[a-zA-Z]*','1target,target22 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 11target,target2','[a-zA-Z]*2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+#the third set calculates (diploid(Lleu(Lleu,Lleu))) and (((Lleu,Llue)Lleu)diploid) - other topologies are captured in the subset scripts above.
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1[a-zA-Z]*','1target,1target,target222 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 111target,target2,target2','[a-zA-Z]*2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+#the fourth calcuates (diploid(Lleu(Lleu(Lleu,Lleu)))) and ((((Lleu,Lleu)Lleu)Lleu)diploid)
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1[a-zA-Z]*','1target,1target,1target,target2222 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1111target,target2,target2,target2','[a-zA-Z]*2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/^ \+//g' Pairwise_result/$species.result.txt | sed 's/ /\t/g' | awk 'BEGIN {OFS="\t"} {gsub(/[12]/, "", $2); print}' | sed 's/target//g' | sed 's/,\+//g' | sort -k2 | awk -F"\t" 'BEGIN {OFS="\t"} {sum[$2] += $1} END {for (item in sum) print item, sum[item]}' | sort  > Pairwise_result/$species.result.final.txt
+done
+
+Albiziajulibrissin      7
+Entadaabyssinica        61
+Lcollinsii      3
+Lcruziana       130
+Lcuspidata      7
+Lesculenta      9
+Lgreggii        4
+Llanceolata     8
+Llempirana      3
+Lmacrophyllaist 4
+Lmacrophyllamac 5
+Lmagnifica      4
+Lmatudae        3
+Lmulticapitula  4
+Lpueblana       10
+Lpulverulenta   435
+Lretusa 10
+Lsalvadorensis  17
+Lshannonii      2
+Ltrichandra     19
+Ltrichodes      5
+Lzacapana       2
+
+
+#Leucaea leuco leuco
+mkdir Pairwise_result/
+
+for species in Microlobius_foetidus Entada_abyssinica Albizia_julibrissin L.collinsii L.cuspidata L.esculenta L.greggii L.lanceolata L.lempirana L.macrophylla-mac L.macrophylla-ist L.cruziana L.magnifica L.multicapitula L.matudae L.pueblana L.pulverulenta L.retusa L.salvadorensis L.shannonii L.trichodes L.trichandra L.zacapana L_leuco_leuco
+do
+#the first two calculate how often Lleu is next to diploid (Lleu,diploid) or (diploid,Lleu)
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1target','[a-zA-Z]*2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1[a-zA-Z]*','target2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+#the second two calculate how often a diploid is next to a pair of Lleu loci  diploid(Lleu, Llue) or (Lleu,Lleu)diploid
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1[a-zA-Z]*','1target,target22 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 11target,target2','[a-zA-Z]*2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+#the third set calculates (diploid(Lleu(Lleu,Lleu))) and (((Lleu,Llue)Lleu)diploid) - other topologies are captured in the subset scripts above.
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1[a-zA-Z]*','1target,1target,target222 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 111target,target2,target2','[a-zA-Z]*2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+#the fourth calcuates (diploid(Lleu(Lleu(Lleu,Lleu)))) and ((((Lleu,Lleu)Lleu)Lleu)diploid)
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1[a-zA-Z]*','1target,1target,1target,target2222 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1111target,target2,target2,target2','[a-zA-Z]*2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/^ \+//g' Pairwise_result/$species.result.txt | sed 's/ /\t/g' | awk 'BEGIN {OFS="\t"} {gsub(/[12]/, "", $2); print}' | sed 's/target//g' | sed 's/,\+//g' | sort -k2 | awk -F"\t" 'BEGIN {OFS="\t"} {sum[$2] += $1} END {for (item in sum) print item, sum[item]}' | sort  > Pairwise_result/$species.result.final.txt
+done
+
+Albiziajulibrissin      9
+Entadaabyssinica        58
+Lcollinsii      9
+Lcruziana       128
+Lcuspidata      8
+Lesculenta      3
+Lgreggii        8
+Llanceolata     10
+Llempirana      4
+Lmacrophyllaist 7
+Lmacrophyllamac 6
+Lmagnifica      6
+Lmatudae        2
+Lmulticapitula  5
+Lpueblana       6
+Lpulverulenta   448
+Lretusa 9
+Lsalvadorensis  21
+Lshannonii      6
+Ltrichandra     16
+Ltrichodes      9
+Lzacapana       1
+
+
+
+#Leucaea L_pallida
+mkdir Pairwise_result/
+
+for species in Microlobius_foetidus Entada_abyssinica Albizia_julibrissin L.collinsii L.cuspidata L.esculenta L.greggii L.lanceolata L.lempirana L.macrophylla-mac L.macrophylla-ist L.cruziana L.magnifica L.multicapitula L.matudae L.pueblana L.pulverulenta L.retusa L.salvadorensis L.shannonii L.trichodes L.trichandra L.zacapana L_pallida
+do
+#the first two calculate how often Lleu is next to diploid (Lleu,diploid) or (diploid,Lleu)
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1target','[a-zA-Z]*2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1[a-zA-Z]*','target2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+#the second two calculate how often a diploid is next to a pair of Lleu loci  diploid(Lleu, Llue) or (Lleu,Lleu)diploid
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1[a-zA-Z]*','1target,target22 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 11target,target2','[a-zA-Z]*2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+#the third set calculates (diploid(Lleu(Lleu,Lleu))) and (((Lleu,Llue)Lleu)diploid) - other topologies are captured in the subset scripts above.
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1[a-zA-Z]*','1target,1target,target222 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 111target,target2,target2','[a-zA-Z]*2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+#the fourth calcuates (diploid(Lleu(Lleu(Lleu,Lleu)))) and ((((Lleu,Lleu)Lleu)Lleu)diploid)
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1[a-zA-Z]*','1target,1target,1target,target2222 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1111target,target2,target2,target2','[a-zA-Z]*2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/^ \+//g' Pairwise_result/$species.result.txt | sed 's/ /\t/g' | awk 'BEGIN {OFS="\t"} {gsub(/[12]/, "", $2); print}' | sed 's/target//g' | sed 's/,\+//g' | sort -k2 | awk -F"\t" 'BEGIN {OFS="\t"} {sum[$2] += $1} END {for (item in sum) print item, sum[item]}' | sort  > Pairwise_result/$species.result.final.txt
+done
+
+Albiziajulibrissin      6
+Entadaabyssinica        71
+Lcollinsii      7
+Lcruziana       6
+Lcuspidata      6
+Lesculenta      22
+Lgreggii        5
+Llanceolata     3
+Llempirana      7
+Lmacrophyllaist 1
+Lmacrophyllamac 2
+Lmagnifica      14
+Lmatudae        34
+Lmulticapitula  3
+Lpueblana       77
+Lpulverulenta   6
+Lretusa 6
+Lsalvadorensis  18
+Lshannonii      2
+Ltrichandra     87
+Ltrichodes      2
+Lzacapana       7
+
+
+
+##L_involucrata
+
+mkdir Pairwise_result/
+
+for species in Microlobius_foetidus Entada_abyssinica Albizia_julibrissin L.collinsii L.cuspidata L.esculenta L.greggii L.lanceolata L.lempirana L.macrophylla-mac L.macrophylla-ist L.cruziana L.magnifica L.multicapitula L.matudae L.pueblana L.pulverulenta L.retusa L.salvadorensis L.shannonii L.trichodes L.trichandra L.zacapana L_involucrata
+do
+#the first two calculate how often Lleu is next to diploid (Lleu,diploid) or (diploid,Lleu)
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1target','[a-zA-Z]*2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1[a-zA-Z]*','target2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+#the second two calculate how often a diploid is next to a pair of Lleu loci  diploid(Lleu, Llue) or (Lleu,Lleu)diploid
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1[a-zA-Z]*','1target,target22 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 11target,target2','[a-zA-Z]*2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+#the third set calculates (diploid(Lleu(Lleu,Lleu))) and (((Lleu,Llue)Lleu)diploid) - other topologies are captured in the subset scripts above.
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1[a-zA-Z]*','1target,1target,target222 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 111target,target2,target2','[a-zA-Z]*2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+#the fourth calcuates (diploid(Lleu(Lleu(Lleu,Lleu)))) and ((((Lleu,Lleu)Lleu)Lleu)diploid)
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1[a-zA-Z]*','1target,1target,1target,target2222 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/[0-9]//g' *50.trimmed.percent.rename.tre | sed 's/:.//g' | sed "s/$species/target/g" | sed 's/(/1/g' | sed 's/)/2/g' | sed 's/"L."//g' | sed 's/_//g' | sed 's/-//g' | sed 's/\.//g' | grep -o 1111target,target2,target2,target2','[a-zA-Z]*2 | sort | uniq -c >>  Pairwise_result/$species.result.txt
+sed 's/^ \+//g' Pairwise_result/$species.result.txt | sed 's/ /\t/g' | awk 'BEGIN {OFS="\t"} {gsub(/[12]/, "", $2); print}' | sed 's/target//g' | sed 's/,\+//g' | sort -k2 | awk -F"\t" 'BEGIN {OFS="\t"} {sum[$2] += $1} END {for (item in sum) print item, sum[item]}' | sort  > Pairwise_result/$species.result.final.txt
+done
+
+
+Albiziajulibrissin      7
+Entadaabyssinica        60
+Lcollinsii      11
+Lcruziana       4
+Lcuspidata      11
+Lesculenta      37
+Lgreggii        8
+Llanceolata     3
+Llempirana      9
+Lmacrophyllaist 3
+Lmacrophyllamac 2
+Lmagnifica      5
+Lmatudae        28
+Lmulticapitula  6
+Lpueblana       72
+Lpulverulenta   9
+Lretusa 3
+Lsalvadorensis  24
+Lshannonii      7
+Ltrichandra     95
+Ltrichodes      4
+Lzacapana       5
+
+
+
+

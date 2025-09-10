@@ -1,0 +1,84 @@
+################
+####MAPPING the distribution of loci in L. trichandra - Figuring out which STRG represents which Leutr gene in the gff3 file!!
+################
+
+
+
+
+#matching the stringtie transcript "STRG name" to the original gff3 locus name
+#The process for identifying the location and number of reference guided loci per chromosome in the L. trichandra genome.
+
+#Data needed are here:
+/media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/
+
+#results are in...
+/media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/STRG_to_GTF_names
+
+#all STRGS in the Tricha_1 mapping are in the gtf file -  for example "STRG.2" through "STRG.63889"
+
+#All STRGS with one isoform and 500-6000bp are listed in Tricha_1.stringtie500-6000_w_one_iso.txt
+
+#STRG fasta is in the - this all STRGS so far - 33653 - these are the complete sequences, not those in the Tricha_1.stringtie.500-6000.one_iso.ref_genome.oneline.fa
+
+## all the loci with 23 sequences (one for each species) are in this folder /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/23Locus_files
+
+
+## list of locus names are 
+/media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/Tricha_1_mapping_all/Consensus_files/23Locus_files/list_23taxa_loci.txt
+
+# now how to figure out which of the STRG name that matches the original GFF3/GTF...
+/media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Tricha_1/STRG_to_GTF_names
+## in that folder I now have the 
+list_23taxa_loci.txt
+Tricha_1.stringtie.500-6000.one_iso.ref_genome.oneline.fa
+
+## getting the STRGS sequences in the 1849 loci
+seqtk subseq Tricha_1.stringtie.500-6000.one_iso.ref_genome.oneline.fa list_23taxa_loci.txt > Tricha_1_2265.fa
+
+#Now I need to match original gff3 names to these STRG names
+ blat Leucaena_gffread_CDS.fasta Tricha_1_2265.fa GFFname_toSTRG.out   -out=blast9
+
+#making the matching list based on best (most 100% full lenght) match
+grep -A1 "# Fields: Query id, Subject id, % identity, alignment length, mismatches, gap openings, q. start, q. end, s. start, s. end, e-value, bit score" GFFname_toSTRG.out | grep -v "# Fields" | sed 's/--//g' | cut -f1-2 | grep "\S" > STRG_to_Leutr_list_diploid_Tricha.txt
+
+#This is the file with the list of loci per chromosome -  STRG_to_Leutr_list_diploid_Tricha.txt
+
+
+
+##summarize some info...
+## number of loci per contig
+     
+
+ 83 Leutr000
+ 97 Leutr001
+ 141 Leutr002
+ 105 Leutr003
+ 43 Leutr004
+ 51 Leutr005
+ 47 Leutr006
+ 88 Leutr007
+ 56 Leutr008
+ 134 Leutr009
+ 72 Leutr010
+ 103 Leutr011
+ 66 Leutr012
+ 50 Leutr013
+ 75 Leutr014
+ 78 Leutr015
+ 67 Leutr016
+ 54 Leutr017
+ 82 Leutr018
+ 63 Leutr019
+ 94 Leutr020
+ 72 Leutr021
+ 76 Leutr022
+ 60 Leutr023
+ 70 Leutr024
+ 116 Leutr025
+ 127 Leutr026
+ 83 Leutr027
+
+Aver - 80.46
+
+
+

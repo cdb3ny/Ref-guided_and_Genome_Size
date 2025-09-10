@@ -1,0 +1,295 @@
+#This is the example Mitochondrial workflow - the same was done for the plastid genomes.
+#Here is the general workflow.
+# - with STAR map all Leucaena RNA-seq data to the reference mitochondrial genome MH717173.1 genome 
+# - from that sorted bam file create a bed file of regions that are low in coverage (e.g., <5)
+# - mask those regions to create a new reference that has Ns in uncovered regions so that I don't pull back the reference sequence when there isn't coverage or between paired reads
+# - use mpileup approach to variant call and recover the genome for each species
+# - build trees
+
+
+## the reference genome
+
+/media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Mito_genome/L.trichandra_genome_MH717173.1.fa
+
+##genome index
+ STAR --runMode genomeGenerate --genomeDir Star_index/ --runThreadN 55 --genomeSAindexNbases 7 --genomeFastaFiles L.trichandra_genome_MH717173.1.fa
+
+##map trichandra reads to the genome... 
+
+ulimit -n 4096
+for species in Tricha_1 4-Greggi 3-Escu 2-Cuspi 1-Collin 23b-Leuco3S Zacap_1 5-Lan-lan 6-Lempi 7-Macro 8-Mac-Ist Adeno_1 Cruz_1 Diver_1 Invol_1 Magni_1  Mcapi_1 Mutud_1 Palli_1 Pulver_1 Retus_1 Glabr_1 Entada_abyssinica Salvo_1 Shann_1 Trichod_1 Albizia_julibrissin
+do
+
+STAR --genomeDir /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Mito_genome/Star_index/ --runThreadN 40 --limitBAMsortRAM 1001533971  --readFilesIn /media/Scratch10TB/Bailey_Lab/projects/LuecaenaTranscriptome/transWork/trimmed/"$species"_trimmed_paired_1.fq  /media/Scratch10TB/Bailey_Lab/projects/LuecaenaTranscriptome/transWork/trimmed/"$species"_trimmed_paired_2.fq   --outSAMtype BAM SortedByCoordinate --outFileNamePrefix /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Mito_genome/"$species"_to_mito
+done
+
+#ran the above as nohup
+
+
+for species in Tricha_1 4-Greggi 3-Escu 2-Cuspi 1-Collin 23b-Leuco3S Zacap_1 5-Lan-lan 6-Lempi 7-Macro 8-Mac-Ist Adeno_1 Cruz_1 Diver_1 Invol_1 Magni_1  Mcapi_1 Mutud_1 Palli_1 Pulver_1 Retus_1 Glabr_1 Entada_abyssinica Salvo_1 Shann_1 Trichod_1 Albizia_julibrissin 
+
+do
+
+##calculate coverage at each position along the genome
+genomeCoverageBed -bga -split -ibam "$species"_to_mitoAligned.sortedByCoord.out.bam -g L.trichandra_genome_MH717173.1.fa > L."$species"_to_mito_Aligned.sortedByCoord.out.bam.coverage
+##if coverage less than 5 for a position save that position to the bed file
+awk '$4<5' L."$species"_to_mito_Aligned.sortedByCoord.out.bam.coverage | cut -f1-3  > L."$species"_to_mito_Aligned.sortedByCoord.out.bam.coverage.bed
+## create a masked file with N in the position with less than 5 coverage
+bedtools maskfasta -fi L.trichandra_genome_MH717173.1.fa -fo L."$species".genome.masked.fa -bed L."$species"_to_mito_Aligned.sortedByCoord.out.bam.coverage.bed
+
+done
+
+
+##ran below with nohup
+
+#!/bin/bash
+
+for species in Tricha_1 4-Greggi 1-Collin 23b-Leuco3S 3-Escu  Zacap_1 5-Lan-lan 6-Lempi 7-Macro 8-Mac-Ist Adeno_1 Cruz_1 Diver_1 2-Cuspi Invol_1 Magni_1  Mcapi_1 Mutud_1 Palli_1 Pulver_1 Retus_1 Glabr_1 Entada_abyssinica Salvo_1 Shann_1 Trichod_1 Albizia_julibrissin
+
+do
+
+/home/cdb3ny/anaconda2/bin/bcftools mpileup -Ou -I -f L."$species".genome.masked.fa "$species"_to_mitoAligned.sortedByCoord.out.bam  -o L."$species"_Aligned.sortedByCoord.out.bam.vcf
+
+/home/cdb3ny/anaconda2/bin/bcftools call -Oz -mv L."$species"_Aligned.sortedByCoord.out.bam.vcf -o L."$species"_Aligned.sortedByCoord.out.bam.vcf.gz
+
+tabix L."$species"_Aligned.sortedByCoord.out.bam.vcf.gz
+
+
+/home/cdb3ny/anaconda2/bin/bcftools consensus -f L."$species".genome.masked.fa L."$species"_Aligned.sortedByCoord.out.bam.vcf.gz   >   L."$species".mito_RNA_consensus.fa
+
+done
+
+
+##pueblana
+
+ulimit -n 4096
+for species in PueblanaG
+do
+STAR --genomeDir /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Mito_genome/Star_index/ --runThreadN 60 --limitBAMsortRAM 1099530022 --limitIObufferSize 150000000 --readFilesIn /media/Scratch10TB/Bailey_Lab/projects/LuecaenaTranscriptome/transWork/trimmed/"$species"-DNA-250bp_1_trimmed_paired_1.fq  /media/Scratch10TB/Bailey_Lab/projects/LuecaenaTranscriptome/transWork/trimmed/"$species"-DNA-250bp_1_trimmed_paired_2.fq  --outSAMtype BAM SortedByCoordinate --outFileNamePrefix /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Mito_genome/"$species"_to_mito
+done
+
+
+
+for species in PueblanaG
+do
+##calculate coverage at each position along the genome
+genomeCoverageBed -bga -split -ibam "$species"_to_mitoAligned.sortedByCoord.out.bam -g L.trichandra_genome_MH717173.1.fa  > L."$species"_toAligned.sortedByCoord.out.bam.coverage
+##if coverage less than 5 for a position save that position to the bed file
+awk '$4<5' L."$species"_toAligned.sortedByCoord.out.bam.coverage | cut -f1-3  >                 L."$species"_toAligned.sortedByCoord.out.bam.coverage.bed
+## create a masked file with N in the position with less than 5 coverage
+bedtools maskfasta -fi L.trichandra_genome_MH717173.1.fa -fo L."$species".genome.masked.fa -bed L."$species"_toAligned.sortedByCoord.out.bam.coverage.bed
+
+done
+
+####
+for species in PueblanaG
+do
+/home/cdb3ny/anaconda2/bin/bcftools mpileup -Ou -I -f L."$species".genome.masked.fa "$species"_to_mitoAligned.sortedByCoord.out.bam  -o L."$species"_Aligned.sortedByCoord.out.bam.vcf
+
+/home/cdb3ny/anaconda2/bin/bcftools call -Oz -mv L."$species"_Aligned.sortedByCoord.out.bam.vcf -o L."$species"_Aligned.sortedByCoord.out.bam.vcf.gz
+
+tabix L."$species"_Aligned.sortedByCoord.out.bam.vcf.gz
+
+
+/home/cdb3ny/anaconda2/bin/bcftools consensus -f L."$species".genome.masked.fa L."$species"_Aligned.sortedByCoord.out.bam.vcf.gz   >   L."$species".mito_RNA_consensus.fa
+
+done
+
+
+## running for microlobius
+
+ulimit -n 4096
+for species in Microlobius_foetidus
+
+do
+STAR --genomeDir /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Mito_genome/Star_index/ --runThreadN 60 --limitBAMsortRAM 1005232668 --readFilesIn /media/Scratch10TB/Bailey_Lab/projects/LuecaenaTranscriptome/transWork/trimmed/"$species"_trimmed_paired_1.fq  --outSAMtype BAM SortedByCoordinate --outFileNamePrefix /media/Scratch2nd4TB/Donovan/2019_Leuc_ref_phylogeny/Mito_genome/"$species"_to
+done
+
+for species in Microlobius_foetidus 
+do
+##calculate coverage at each position along the genome
+genomeCoverageBed -bga -split -ibam "$species"_toAligned.sortedByCoord.out.bam -g L.trichandra_genome_MH717173.1.fa > L."$species"_toAligned.sortedByCoord.out.bam.coverage
+##if coverage less than 5 for a position save that position to the bed file
+awk '$4<5' L."$species"_toAligned.sortedByCoord.out.bam.coverage | cut -f1-3  > L."$species"_toAligned.sortedByCoord.out.bam.coverage.bed
+## create a masked file with N in the position with less than 5 coverage
+bedtools maskfasta -fi L.trichandra_genome_MH717173.1.fa -fo L."$species".genome.masked.fa -bed L."$species"_toAligned.sortedByCoord.out.bam.coverage.bed
+done
+
+######
+for species in Microlobius_foetidus
+do
+/home/cdb3ny/anaconda2/bin/bcftools mpileup -Ou -I -f L."$species".genome.masked.fa "$species"_toAligned.sortedByCoord.out.bam  -o L."$species"_Aligned.sortedByCoord.out.bam.vcf
+/home/cdb3ny/anaconda2/bin/bcftools call -Oz -mv L."$species"_Aligned.sortedByCoord.out.bam.vcf -o L."$species"_Aligned.sortedByCoord.out.bam.vcf.gz
+tabix L."$species"_Aligned.sortedByCoord.out.bam.vcf.gz
+/home/cdb3ny/anaconda2/bin/bcftools consensus -f L."$species".genome.masked.fa L."$species"_Aligned.sortedByCoord.out.bam.vcf.gz   >   L."$species".mito_RNA_consensus.fa
+done
+
+  
+
+
+
+
+
+
+##need to rename terminals...
+
+
+for species in Tricha_1 4-Greggi 1-Collin 23b-Leuco3S 3-Escu  Zacap_1 5-Lan-lan 6-Lempi 7-Macro 8-Mac-Ist Adeno_1 Cruz_1 Diver_1 2-Cuspi Invol_1 Magni_1  Mcapi_1 Mutud_1 Palli_1 Pulver_1 Retus_1 Glabr_1 Entada_abyssinica Salvo_1 Shann_1 Trichod_1 Albizia_julibrissin Microlobius_foetidus PueblanaG
+
+do
+sed "s/MH717173.1/$species/g"  L."$species".mito_RNA_consensus.fa > L."$species".mito_RNA_consensus.rename.fa
+done
+
+
+
+
+##how much N data is there...
+
+grep -o "N" *.plastid_RNA_consensus.rename.fa | sort | uniq -c | sort -nk1
+ 107786 L.PueblanaG.mito_RNA_consensus.rename.fa:N
+ 570215 L.Albizia_julibrissin.mito_RNA_consensus.rename.fa:N
+ 585429 L.Microlobius_foetidus.mito_RNA_consensus.rename.fa:N
+ 592481 L.Entada_abyssinica.mito_RNA_consensus.rename.fa:N
+ 596519 L.5-Lan-lan.mito_RNA_consensus.rename.fa:N
+ 621980 L.1-Collin.mito_RNA_consensus.rename.fa:N
+ 624354 L.Adeno_1.mito_RNA_consensus.rename.fa:N
+ 629509 L.6-Lempi.mito_RNA_consensus.rename.fa:N
+ 630207 L.4-Greggi.mito_RNA_consensus.rename.fa:N
+ 634821 L.Retus_1.mito_RNA_consensus.rename.fa:N
+ 635974 L.2-Cuspi.mito_RNA_consensus.rename.fa:N
+ 636658 L.Zacap_1.mito_RNA_consensus.rename.fa:N
+ 636736 L.Invol_1.mito_RNA_consensus.rename.fa:N
+ 636830 L.Diver_1.mito_RNA_consensus.rename.fa:N
+ 637710 L.7-Macro.mito_RNA_consensus.rename.fa:N
+ 641372 L.Shann_1.mito_RNA_consensus.rename.fa:N
+ 643318 L.Trichod_1.mito_RNA_consensus.rename.fa:N
+ 644368 L.Mcapi_1.mito_RNA_consensus.rename.fa:N
+ 646306 L.8-Mac-Ist.mito_RNA_consensus.rename.fa:N
+ 647918 L.Salvo_1.mito_RNA_consensus.rename.fa:N
+ 648349 L.3-Escu.mito_RNA_consensus.rename.fa:N
+ 648854 L.Pulver_1.mito_RNA_consensus.rename.fa:N
+ 649421 L.Mutud_1.mito_RNA_consensus.rename.fa:N
+ 650523 L.Magni_1.mito_RNA_consensus.rename.fa:N
+ 661531 L.23b-Leuco3S.mito_RNA_consensus.rename.fa:N
+ 664522 L.Glabr_1.mito_RNA_consensus.rename.fa:N
+ 664580 L.Tricha_1.mito_RNA_consensus.rename.fa:N
+ 670013 L.Cruz_1.mito_RNA_consensus.rename.fa:N
+ 671876 L.Palli_1.mito_RNA_consensus.rename.fa:N
+
+
+cat *RNA_consensus.rename.fa > mito_matrix.fa
+
+##taking it over to Aliview to properly rename terminals, check alignment, and root with microlobius and check things out.
+
+#alignment 722009 bp 
+#renamed and saved as phy - both transferred back to the server
+
+mito_matrix_rename.fa  
+
+mito_matrix_rename.phy
+
+#making phylip matrix without "Ns"
+
+sed 's/N/-/g' mito_matrix_rename.phy > mito_matrix_rename_noN.phy
+
+
+
+#building trees
+ 2012  mkdir Phylogenetic_analysis
+ 2013  cp Plastid_matrix_no_N* Phylogenetic_analysis/
+ 2014  cd Phylogenetic_analysis/
+
+ raxmlHPC -f a -T 50 -m GTRCAT -p 12345 -x 12345 -# 100 -s mito_matrix_rename_noN.phy -n Mito_ -o Microlobius_foetidus
+(((Entada_abyssinica:0.00548114583173323674,Albizia_julibrissin:0.00583643918844939640):0.00069803045783243417[92],((((L.retusa:0.00199392344788019678,L.greggii:0.00107794517957518488):0.00085669868301992992[100],(L.diversifolia:0.00161503214074519108,((L.leucocephala_gla:0.00095159301359999280,L.leucocephala_leu:0.00111650884051889797):0.00058360634526697264[96],L.pulverulenta:0.00134392123841848383):0.00051340482062041566[93]):0.00087097541754201958[100]):0.00043681771498032846[100],(L.cuspidata:0.00145368460928050106,((L.involucrata:0.00118988227406611048,(L.pueblana:0.00383815899226900778,L.pallida:0.00096977333387906583):0.00032583086563822878[53]):0.00025149753564182315[51],(L.esculenta:0.00127452020646320408,L.matudae:0.00122631038277048825):0.00042827667206282114[79]):0.00036525481574886692[100]):0.00028939259656286071[100]):0.00049911571671665343[100],(((((L.multicapitula:0.00057816532585137892,L.collinsii:0.00077786092838211219):0.00015460531785783799[28],(L.zacapana:0.00088195329194631065,L.magnifica:0.00081414312147669939):0.00039469209795661752[84]):0.00020947692292883733[6],(((L.trichandra:0.00119560414456864532,L.salvadorensis:0.00086125056377736066):0.00019623927575207001[26],L.lempirana:0.00102612602335423134):0.00016458800941909310[27],L.shannoni:0.00075137952999327934):0.00019279337390444348[33]):0.00015329356032736625[4],(L.lanceolata_lan:0.00098793470363389723,(L.cruziana:0.00139564332716694264,(L.trichodes:0.00118248050501217799,(L.macrophylla_ist:0.00176076451454054424,L.macrophylla_mac:0.00065894563179594203):0.00067810477663241486[100]):0.00020564241144258971[77]):0.00018470598463538480[45]):0.00013953795544150571[14]):0.00036211357276497781[86],L.confertiflora_adeno:0.00101658078880414440):0.00062843113091304379[100]):0.00247051549821349558[100]):0.00524955706062340231,Microlobius_foetidus:0.00524955706062340231);
+
+###NOTE - reduced trees are not necessary - the run was on the reduced tree... the md5sums are identical
+
+#repeating on the reduced version of the matrix
+raxmlHPC -f a -T 50 -m GTRCAT -p 12345 -x 12345 -# 100 -s mito_matrix_rename_noN.phy -n Mito_1 -o Microlobius_foetidus
+NOT NEEDED...
+
+
+
+####calculate DIPLOID ONLY TREE AND WITH EACH TETRAPLOID SINGLY.
+
+#remove tetraploid names - L.leucocephala_leu L.confertiflora_adeno L.diversifolia  L.leucocephala_gla L.involucrata L.pallida 
+
+for species in Microlobius_foetidus Albizia_julibrissin Entada_abyssinica L.collinsii L.cruziana L.cuspidata L.esculenta L.greggii L.lanceolata_lan L.lempirana L.macrophylla_mac L.macrophylla_ist L.magnifica L.multicapitula L.matudae L.pueblana L.pulverulenta L.retusa L.salvadorensis L.shannoni L.trichandra L.trichodes L.zacapana
+
+do
+grep $species mito_matrix_rename_noN.phy >> mito_matrix_rename_noN.diploids.phy
+done
+
+#matrix has - 23 722009
+
+##then used nano to correct the phy header - 23 722009
+#now RAxML
+raxmlHPC -f a -T 20 -m GTRCAT -p 12345 -x 12345 -# 100 -s mito_matrix_rename_noN.diploids.phy -n Mito_1_diploids -o Microlobius_foetidus
+(((Albizia_julibrissin:0.00579884469189636143,Entada_abyssinica:0.00537926083403791801):0.00069683428393352113[42],(((L.pulverulenta:0.00227991299893806664,(L.greggii:0.00098814613571725956,L.retusa:0.00192718781328386768):0.00078047416597553884[100]):0.00053048306228014198[83],(L.cuspidata:0.00135842824265946637,((L.esculenta:0.00125280875735407290,L.matudae:0.00117608079238971149):0.00046954173404073290[86],L.pueblana:0.00416702087435136953):0.00032654335179851815[95]):0.00030972927627072506[73]):0.00054633945640766000[100],(((L.lanceolata_lan:0.00095184463628983167,((L.magnifica:0.00081945055886458861,L.zacapana:0.00081473805283996013):0.00038377770754383246[80],L.collinsii:0.00079240658967646733):0.00015173380386926267[58]):0.00018524634968378469[33],((((L.cruziana:0.00124106809691106415,(L.macrophylla_ist:0.00159473026498158804,L.macrophylla_mac:0.00066238352941540171):0.00055959666022804258[97]):0.00037368072853263357[1],(L.lempirana:0.00102851888711903965,(L.salvadorensis:0.00084119267660824593,L.trichandra:0.00115216371233765554):0.00014261238949781892[27]):0.00020702114381657011[28]):0.00003268211874645421[0],L.shannoni:0.00075414184409611912):0.00023742269346377557[0],L.multicapitula:0.00063109444037685912):0.00024446035098327993[0]):0.00026161292990076174[0],L.trichodes:0.00110708730218951070):0.00080816027965551352[100]):0.00238429222906095823[100]):0.00515452817568460338,Microlobius_foetidus:0.00515452817568460338);
+
+###################
+#LEUCOCEPHALAS - now adding in both Leucocephalas
+
+cp mito_matrix_rename_noN.diploids.phy mito_matrix_rename_noN.diploids_leucos.phy
+for species in L.leucocephala_leu L.leucocephala_gla 
+do
+grep $species mito_matrix_rename_noN.phy >> mito_matrix_rename_noN.diploids_leucos.phy
+done
+
+# changed the header - 25 722009
+raxmlHPC -f a -T 20 -m GTRCAT -p 12345 -x 12345 -# 100 -s mito_matrix_rename_noN.diploids_leucos.phy -n Mito_1_diploids_leucos -o Microlobius_foetidus
+((((((L.greggii:0.00102117197596247812,L.retusa:0.00200214898260071784):0.00081767678629599634[100],(L.pulverulenta:0.00132448772800198905,(L.leucocephala_gla:0.00084821649019187705,L.leucocephala_leu:0.00109279342433161878):0.00057431492911155270[99]):0.00122149288504721978[100]):0.00039802721075674372[99],(L.cuspidata:0.00139030486305311246,(L.pueblana:0.00419174749639714649,(L.matudae:0.00118823815942164764,L.esculenta:0.00125058241232797436):0.00047587616246222534[96]):0.00032953688642182983[100]):0.00047307917822424396[99]):0.00046927603115138082[100],(((L.shannoni:0.00073669050230281308,((L.trichandra:0.00115722212517335027,L.salvadorensis:0.00085830947908825683):0.00019310481773313171[30],L.lempirana:0.00102333578411668694):0.00015905369768496347[25]):0.00018162372687187349[22],((L.magnifica:0.00078024770788750694,L.zacapana:0.00089117016468918421):0.00036661667302369179[85],(L.multicapitula:0.00057175395676527620,L.collinsii:0.00078040737847730971):0.00017825330551173095[25]):0.00019829554549021653[0]):0.00023312028013122973[11],(L.lanceolata_lan:0.00099187664942019475,(L.cruziana:0.00137050657506260156,(L.trichodes:0.00113394115834429847,(L.macrophylla_mac:0.00061838690944529247,L.macrophylla_ist:0.00176953708922381156):0.00061754877125659135[96]):0.00019079534043102065[82]):0.00016236780704446230[41]):0.00011818298155129761[19]):0.00079567466205582109[100]):0.00239870479041693480[100],(Entada_abyssinica:0.00540147029264202976,Albizia_julibrissin:0.00581458837388920940):0.00068450242528172729[72]):0.00520044895722569268,Microlobius_foetidus:0.00520044895722569268);
+
+#################
+#DIVERSIFOLIA
+cp mito_matrix_rename_noN.diploids.phy mito_matrix_rename_noN.diploids_div.phy
+for species in L.diversifolia
+do  
+grep $species mito_matrix_rename_noN.phy >> mito_matrix_rename_noN.diploids_div.phy
+done
+
+
+
+#RAxML
+raxmlHPC -f a -T 20 -m GTRCAT -p 12345 -x 12345 -# 100 -s raxmlHPC -s mito_matrix_rename_noN.diploids_div.phy -o Microlobius_foetidus -n Plastid_1_diploids_div 
+((((((L.diversifolia:0.00153777981499128948,L.pulverulenta:0.00157531169134933415):0.00092939257980887205[100],(L.greggii:0.00105103238148635415,L.retusa:0.00195126751869039794):0.00083539443232368048[100]):0.00043655858125876110[100],(L.cuspidata:0.00139962534768279015,((L.matudae:0.00119983564848577919,L.esculenta:0.00124344076572010099):0.00048077794807505693[89],L.pueblana:0.00406843987350950093):0.00030597788808776080[96]):0.00032720224544263037[98]):0.00070010675647308321[100],(((L.shannoni:0.00074232943028896615,(L.lempirana:0.00101462193839455678,(L.trichandra:0.00114924606756718561,L.salvadorensis:0.00086401585167371635):0.00019252675833506685[25]):0.00015980392351450307[25]):0.00018452698877872523[41],((L.magnifica:0.00077770183805942752,L.zacapana:0.00087671613240320899):0.00038403075408557290[89],(L.collinsii:0.00078783147966815677,L.multicapitula:0.00056716966116673602):0.00015986981597583975[61]):0.00019835971726606358[8]):0.00020887152708457768[29],(L.lanceolata_lan:0.00099677732881952880,(L.cruziana:0.00137744700684071003,((L.macrophylla_mac:0.00061670902344101259,L.macrophylla_ist:0.00179883232351967588):0.00065353173075710798[99],L.trichodes:0.00111651881301873496):0.00019354526212678270[72]):0.00016652167479324701[48]):0.00011849319206392899[31]):0.00085022501477195528[100]):0.00242439237963845526[100],(Entada_abyssinica:0.00541471583914445321,Albizia_julibrissin:0.00580088727089151258):0.00067543493562620535[78]):0.00522535250639050673,Microlobius_foetidus:0.00522535250639050673);
+
+#################
+#CONFERTIFLORA
+cp mito_matrix_rename_noN.diploids.phy mito_matrix_rename_noN.diploids_con.phy
+for species in L.confertiflora_adeno
+do  
+grep $species mito_matrix_rename_noN.phy >> mito_matrix_rename_noN.diploids_con.phy
+done
+
+
+
+#RAxML
+raxmlHPC -f a -T 20 -m GTRCAT -p 12345 -x 12345 -# 100 -s raxmlHPC -s mito_matrix_rename_noN.diploids_con.phy -o Microlobius_foetidus -n Mito_1_diploids_con 
+(((Albizia_julibrissin:0.00578785104505339081,Entada_abyssinica:0.00544020682480090764):0.00066918894761567292[84],(((L.pulverulenta:0.00232796041657737677,(L.greggii:0.00099713504889475252,L.retusa:0.00193897488715308861):0.00080606644557001310[100]):0.00043610933827830327[59],(L.cuspidata:0.00132883549990293046,((L.matudae:0.00121253999711348477,L.esculenta:0.00125267341728691763):0.00048263867746673936[100],L.pueblana:0.00415773971926562940):0.00035313033742646925[56]):0.00033107043161494711[61]):0.00052750755293546117[100],(L.confertiflora_adeno:0.00101344279931860483,((L.lanceolata_lan:0.00095698322777622844,L.collinsii:0.00083366625929494581):0.00009782327700179095[8],(((((L.macrophylla_mac:0.00064904221143305082,L.macrophylla_ist:0.00162082500100067892):0.00060341351501000981[100],L.trichodes:0.00115578085281784772):0.00021414943009349637[87],L.cruziana:0.00130934140987119937):0.00020512038530029480[60],L.multicapitula:0.00068128958699963267):0.00014318176124150474[3],((L.magnifica:0.00076293879563426638,L.zacapana:0.00095153717149955525):0.00041428470808321875[89],(L.shannoni:0.00075932023384191920,(L.lempirana:0.00099540015212708222,(L.trichandra:0.00116151950601295806,L.salvadorensis:0.00085502483014304157):0.00018986663585362611[32]):0.00013863253298007015[29]):0.00013838300090313101[32]):0.00016610569885203459[25]):0.00027741975785203568[12]):0.00028482331412906170[79]):0.00071051618272367908[100]):0.00242784780702275061[100]):0.00518141900565962429,Microlobius_foetidus:0.00518141900565962429);
+
+##########
+#PALLIDA
+cp mito_matrix_rename_noN.diploids.phy mito_matrix_rename_noN.diploids_pallida.phy
+for species in L.pallida
+do  
+grep $species mito_matrix_rename_noN.phy >> mito_matrix_rename_noN.diploids_pallida.phy
+done
+
+
+#RAxML
+raxmlHPC -f a -T 20 -m GTRCAT -p 12345 -x 12345 -# 100 -s raxmlHPC -s mito_matrix_rename_noN.diploids_pallida.phy -o Microlobius_foetidus -n Mito_1_diploids_pallida 
+(((Entada_abyssinica:0.00539824739924753359,Albizia_julibrissin:0.00579949808196851286)76:0.00067667158727166771,(((L.pulverulenta:0.00231154034360331242,(L.greggii:0.00098878269995009821,L.retusa:0.00194366743141260231)100:0.00080208324205193935)94:0.00045307815438714059,(L.cuspidata:0.00138438652105682815,((L.pallida:0.00122865432722511054,(L.matudae:0.00114462780681632952,L.esculenta:0.00116965970623807061)86:0.00022377121227141672)64:0.00046021750797233820,L.pueblana:0.00421523485737584740)94:0.00028093897710556562)92:0.00035885350407122618)100:0.00053530623256187139,((((L.lempirana:0.00103130683476135190,(L.trichandra:0.00115039504292991594,L.salvadorensis:0.00084801549334659137)28:0.00018865931686014073)18:0.00015426936834054482,L.shannoni:0.00074135296967050136)24:0.00018154039889520460,((L.collinsii:0.00078135738286420854,L.multicapitula:0.00057189654634286062)73:0.00016228553664124923,(L.magnifica:0.00077610705317293388,L.zacapana:0.00087516688255645167)85:0.00037999422107685797)2:0.00020327144499905522)24:0.00021526445340098695,(L.lanceolata_lan:0.00099541360511393520,(L.cruziana:0.00137503986146486233,(L.trichodes:0.00112467945689457508,(L.macrophylla_ist:0.00175807041489942431,L.macrophylla_mac:0.00061583761525689821)100:0.00061810569275454815)83:0.00018842652476105010)48:0.00016315840467296067)33:0.00011552753485967080)100:0.00088300057561195295)100:0.00240543763625153915):0.00259510206063705111,Microlobius_foetidus:0.00259510206063705111);
+
+
+##########
+INVOLUCRATA
+cp mito_matrix_rename_noN.diploids.phy mito_matrix_rename_noN.diploids_invol.phy
+for species in L.involucrata
+do  
+grep $species mito_matrix_rename_noN.phy >> mito_matrix_rename_noN.diploids_invol.phy
+done
+
+#RAxML
+raxmlHPC -f a -T 20 -m GTRCAT -p 12345 -x 12345 -# 100 -s raxmlHPC -s mito_matrix_rename_noN.diploids_invol.phy -o Microlobius_foetidus -n Mito_1_diploids_invol 
+(((((L.pulverulenta:0.00233289499366537510,(L.greggii:0.00099565301604319779,L.retusa:0.00196601132313818259):0.00080260858103593281[100]):0.00047602667625670797[47],(L.cuspidata:0.00145401443946434708,((L.matudae:0.00112205624586191217,L.pueblana:0.00395285887191511396):0.00032445823338329659[0],(L.esculenta:0.00127785278775270432,L.involucrata:0.00124223581327440112):0.00032460250942788378[22]):0.00045735686597403181[82]):0.00029293078788998389[38]):0.00048767021685659664[100],((L.lanceolata_lan:0.00100551131661277523,(L.cruziana:0.00137435488528268499,(L.trichodes:0.00113584462650221578,(L.macrophylla_mac:0.00062053696238289135,L.macrophylla_ist:0.00175067332185614298):0.00061668997484639080[99]):0.00019244726725802476[85]):0.00016707155742361765[66]):0.00011557952384431249[30],((((L.trichandra:0.00115223136454284760,L.salvadorensis:0.00084753567916280787):0.00018935975417377955[36],L.lempirana:0.00102481462464270429):0.00015703083062416491[32],L.shannoni:0.00074138388899593641):0.00018359808133579168[30],((L.multicapitula:0.00057087238866758970,L.collinsii:0.00078482051673787947):0.00016384112461347204[47],(L.magnifica:0.00077068509209343142,L.zacapana:0.00087532443848182780):0.00037896640993929047[85]):0.00019050944418391738[11]):0.00021854124846608787[16]):0.00088088167148030032[100]):0.00235097932958170048[100],(Albizia_julibrissin:0.00581006566484156689,Entada_abyssinica:0.00539413505958196218):0.00068521472651141132[74]):0.00519342156623784322,Microlobius_foetidus:0.00519342156623784322);
