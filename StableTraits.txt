@@ -1,0 +1,230 @@
+﻿Donovan, Katie, Mike - StableTraits runs from Sept 28-29, 2022.
+Server - Teaching1, path: /media/CLG2018/Donovan/Leucaena_GS
+Version history and path:  /Programs/stabletraits  version: 1.4
+
+
+We started off running default stabletraits to test how it runs and we compared our results that of the Utah group from last spring.  All looked good.  Next we mirrored the Helianthus paper analysis… Below are both sets of scripts:
+
+
+#first attempt with stabletraits
+/Programs/stabletraits --tree play4_noOG.tree --data GS_only_DB8-20-22.tsv  --output myoutput
+/Programs/stabletraitssum   --path myoutput
+
+
+#now following the strategy of the Helianthus paper
+#StableTraits was run for 10 million generations, sampling every 1000 generations with two independent chains.
+/Programs/stabletraits --iterations 10000000 --skip 1000 --tree play4_noOG.tree --data GS_only_DB8-20-22.tsv  --output Leucaena1
+/Programs/stabletraitssum   --path Leucaena1
+
+
+Relevant outputs:
+
+
+Inferred ancestral genome sizes
+
+
+Leucaena1.ancstates - file
+Parameter       Brownian        Median  95%CI_Low       95%CI_High
+stable_alpha    2       1.85265 1.48944 1.99264
+stable_scale    0.0235725       0.0272471       0.0165828       0.0404621
+n0      1.53588 1.52497 1.40518 1.65017
+100.0   1.44692 1.44454 1.37958 1.51414
+95100.0 1.43837 1.43706 1.38142 1.49403
+n1      1.43882 1.43806 1.38509 1.49217
+n2      1.43039 1.43041 1.3746  1.48722
+n3      1.41501 1.41569 1.35831 1.47056
+n4      1.40316 1.4047  1.34421 1.46342
+100100.0        1.41267 1.41227 1.35741 1.46535
+L_macrophylla_ist       1.455   1.455   1.455   1.455
+L_macrophylla_mac       1.38    1.38    1.38    1.38
+L_trichodes     1.328   1.328   1.328   1.328
+n5      1.41269 1.41296 1.35292 1.47266
+L_cruziana      1.426   1.426   1.426   1.426
+L_lanceolata    1.387   1.387   1.387   1.387
+L_multicapitula 1.448   1.448   1.448   1.448
+37100.0 1.44564 1.44459 1.38757 1.50279
+n6      1.45121 1.45033 1.38576 1.51501
+L_salvadorensis 1.441   1.441   1.441   1.441
+L_shannonii     1.488   1.488   1.488   1.488
+L_lempirana     1.502   1.502   1.502   1.502
+n7      1.4266  1.42585 1.36327 1.48825
+n8      1.42164 1.42132 1.35258 1.48816
+L_zacapana      1.38    1.38    1.38    1.38
+L_collinsii     1.448   1.448   1.448   1.448
+L_magnifica     1.345   1.345   1.345   1.345
+L_trichandra    1.478   1.478   1.478   1.478
+16100.0 1.56106 1.54685 1.44283 1.65621
+n9      1.57318 1.55628 1.45616 1.66362
+n10     1.59595 1.57088 1.46782 1.68454
+n11     1.65318 1.61385 1.49288 1.74898
+L_retusa        1.86    1.86    1.86    1.86
+L_greggii       1.59    1.59    1.59    1.59
+L_pulverulenta  1.532   1.532   1.532   1.532
+n12     1.56276 1.55686 1.44471 1.66943
+L_esculenta     1.453   1.453   1.453   1.453
+L_matudae       1.665   1.665   1.665   1.665
+L_cuspidata     1.555   1.555   1.555   1.555
+
+
+Leucaena1.brlens
+
+
+Rates of genome size change
+
+
+Branch  Branch_midpoint_height  Orig_len        Rate
+100.0->n0       2.03775 4.0755  3.37633
+95100.0->100.0  4.21843 0.285857        1.18554
+n1->95100.0     4.47618 0.229643        0.176833
+n2->n1  4.74931 0.316627        1.15131
+n3->n2  5.1446  0.473938        1.81253
+n4->n3  5.60389 0.444647        1.39662
+100100.0->n4    6.34665 1.04088 0.628761
+L_macrophylla_ist->100100.0     7.39607 1.05796 3.52037
+L_macrophylla_mac->100100.0     7.39607 1.05796 2.65861
+L_trichodes->n4 6.87563 2.09884 4.48637
+n5->n3  5.58295 0.402778        0.364518
+L_cruziana->n5  6.8547  2.14071 0.755246
+L_lanceolata->n5        6.8547  2.14071 1.50354
+L_multicapitula->n2     6.41634 3.01742 0.857856
+37100.0->n1     4.71022 0.238439        1.13322
+n6->37100.0     5.09786 0.536851        0.663857
+L_salvadorensis->n6     6.64567 2.55876 0.494261
+L_shannonii->n6 6.64567 2.55876 1.99559
+L_lempirana->37100.0    6.37724 3.09561 2.76506
+n7->95100.0     4.54594 0.369162        1.56346
+n8->n7  5.12224 0.783448        0.433215
+L_zacapana->n8  6.71951 2.41108 2.25526
+L_collinsii->n8 6.71951 2.41108 1.45576
+L_magnifica->n7 6.32778 3.19453 3.83324
+L_trichandra->100.0     6.00028 3.84955 1.44514
+16100.0->n0     0.576895        1.15379 1.72574
+n9->16100.0     1.42033 0.533086        1.09505
+n10->n9 2.13158 0.889412        1.31142
+n11->n10        3.33833 1.52409 2.94951
+L_retusa->n11   6.01271 3.82467 10.6658
+L_greggii->n11  6.01271 3.82467 1.03343
+L_pulverulenta->n10     5.25067 5.34877 1.42459
+n12->n9 3.49771 3.62167 0.0256037
+L_esculenta->n12        6.6168  2.61651 5.44098
+L_matudae->n12  6.6168  2.61651 5.6652
+L_cuspidata->16100.0    4.53942 6.77127 0.265407
+
+
+
+
+
+
+Leucaena1.rates_tree
+((((((((L_macrophylla_ist:3.52037,L_macrophylla_mac:2.65861)100100.0:0.628761,L_trichodes:4.48637)n4:1.39662,(L_cruziana:0.755246,L_lanceolata:1.50354)n5:0.364518)n3:1.81253,L_multicapitula:0.857856)n2:1.15131,((L_salvadorensis:0.494261,L_shannonii:1.99559)n6:0.663857,L_lempirana:2.76506)37100.0:1.13322)n1:0.176833,((L_zacapana:2.25526,L_collinsii:1.45576)n8:0.433215,L_magnifica:3.83324)n7:1.56346)95100.0:1.18554,L_trichandra:1.44514)100.0:3.37633,((((L_retusa:10.6658,L_greggii:1.03343)n11:2.94951,L_pulverulenta:1.42459)n10:1.31142,(L_esculenta:5.44098,L_matudae:5.6652)n12:0.0256037)n9:1.09505,L_cuspidata:0.265407)16100.0:1.72574)n0;
+
+
+Icytree.org visualization with node numbers:
+
+
+
+
+  
+
+
+
+## 9/15/23 - repeating with newest fall 2023 genome sizes:
+#adding a new GS_only_DB9-15-23.tsv - these data came from the genome size file "Leucaena 2C-Values_AUG2023" on the shared google drive
+#StableTraits was run for 10 million generations, sampling every 1000 generations with two independent chains.
+/Programs/stabletraits --iterations 10000000 --skip 1000 --tree play4_noOG.tree --data GS_only_DB9-15-23.tsv  --output Leucaena2
+/Programs/stabletraitssum   --path Leucaena2
+
+
+Leucaena2.ancstates - File
+
+
+Parameter       Brownian        Median  95%CI_Low       95%CI_High
+stable_alpha    2       1.79043 1.3385  1.98682
+stable_scale    0.0267096       0.0277893       0.0139932       0.0444421
+n0      1.55997 1.53321 1.40874 1.67331
+100.0   1.48512 1.47802 1.41272 1.55113
+95100.0 1.47973 1.47452 1.41648 1.53644
+n1      1.48197 1.47659 1.42317 1.53523
+n2      1.48412 1.47728 1.42266 1.53965
+n3      1.4905  1.47992 1.42467 1.54611
+n4      1.48334 1.47496 1.41843 1.54174
+100100.0        1.49306 1.48719 1.42922 1.54856
+L_macrophylla_ist       1.453   1.453   1.453   1.453
+L_macrophylla_mac       1.543   1.543   1.543   1.543
+L_trichodes     1.43    1.43    1.43    1.43
+n5      1.50239 1.48685 1.42346 1.56452
+L_cruziana      1.624   1.624   1.624   1.624
+L_lanceolata    1.444   1.444   1.444   1.444
+L_multicapitula 1.464   1.464   1.464   1.464
+37100.0 1.48269 1.47787 1.42083 1.54007
+n6      1.48234 1.47879 1.41406 1.54722
+L_salvadorensis 1.488   1.488   1.488   1.488
+L_shannonii     1.475   1.475   1.475   1.475
+L_lempirana     1.494   1.494   1.494   1.494
+n7      1.46915 1.46611 1.40077 1.53217
+n8      1.46318 1.46218 1.38875 1.53534
+L_zacapana      1.395   1.395   1.395   1.395
+L_collinsii     1.513   1.513   1.513   1.513
+L_magnifica     1.402   1.402   1.402   1.402
+L_trichandra    1.487   1.487   1.487   1.487
+16100.0 1.58117 1.55056 1.43501 1.67981
+n9      1.58719 1.552   1.43854 1.67845
+n10     1.62587 1.57802 1.45371 1.71853
+n11     1.71862 1.67656 1.51    1.87793
+L_retusa        1.961   1.961   1.961   1.961
+L_greggii       1.709   1.709   1.709   1.709
+L_pulverulenta  1.533   1.533   1.533   1.533
+n12     1.47061 1.45573 1.36854 1.55738
+L_esculenta     1.449   1.449   1.449   1.449
+L_matudae       1.408   1.408   1.408   1.408
+L_cuspidata     1.629   1.629   1.629   1.629
+
+
+
+
+Leucaena2.brlens file
+Branch  Branch_midpoint_height  Orig_len        Rate
+100.0->n0       2.03775 4.0755  2.23275
+95100.0->100.0  4.21843 0.285857        0.534643
+n1->95100.0     4.47618 0.229643        0.352788
+n2->n1  4.74931 0.316627        0.0994231
+n3->n2  5.1446  0.473938        0.313787
+n4->n3  5.60389 0.444647        0.607498
+100100.0->n4    6.34665 1.04088 0.979032
+L_macrophylla_ist->100100.0     7.39607 1.05796 2.71478
+L_macrophylla_mac->100100.0     7.39607 1.05796 4.43147
+L_trichodes->n4 6.87563 2.09884 2.53459
+n5->n3  5.58295 0.402778        0.891807
+L_cruziana->n5  6.8547  2.14071 7.65575
+L_lanceolata->n5        6.8547  2.14071 2.3919
+L_multicapitula->n2     6.41634 3.01742 0.624148
+37100.0->n1     4.71022 0.238439        0.214088
+n6->37100.0     5.09786 0.536851        0.102549
+L_salvadorensis->n6     6.64567 2.55876 0.470236
+L_shannonii->n6 6.64567 2.55876 0.193506
+L_lempirana->37100.0    6.37724 3.09561 0.748741
+n7->95100.0     4.54594 0.369162        1.13047
+n8->n7  5.12224 0.783448        0.362625
+L_zacapana->n8  6.71951 2.41108 3.5335
+L_collinsii->n8 6.71951 2.41108 2.673
+L_magnifica->n7 6.32778 3.19453 2.9295
+L_trichandra->100.0     6.00028 3.84955 0.373802
+16100.0->n0     0.576895        1.15379 1.31919
+n9->16100.0     1.42033 0.533086        0.161077
+n10->n9 2.13158 0.889412        2.25334
+n11->n10        3.33833 1.52409 6.51895
+L_retusa->n11   6.01271 3.82467 11.8786
+L_greggii->n11  6.01271 3.82467 1.35474
+L_pulverulenta->n10     5.25067 5.34877 1.58982
+n12->n9 3.49771 3.62167 4.13149
+L_esculenta->n12        6.6168  2.61651 0.339801
+L_matudae->n12  6.6168  2.61651 2.40991
+L_cuspidata->16100.0    4.53942 6.77127 2.46192
+
+
+Leucaena2.rates_tree file
+((((((((L_macrophylla_ist:2.71478,L_macrophylla_mac:4.43147)100100.0:0.979032,L_trichodes:2.53459)n4:0.607498,(L_cruziana:7.65575,L_lanceolata:2.3919)n5:0.891807)n3:0.313787,L_multicapitula:0.624148)n2:0.0994231,((L_salvadorensis:0.470236,L_shannonii:0.193506)n6:0.102549,L_lempirana:0.748741)37100.0:0.214088)n1:0.352788,((L_zacapana:3.5335,L_collinsii:2.673)n8:0.362625,L_magnifica:2.9295)n7:1.13047)95100.0:0.534643,L_trichandra:0.373802)100.0:2.23275,((((L_retusa:11.8786,L_greggii:1.35474)n11:6.51895,L_pulverulenta:1.58982)n10:2.25334,(L_esculenta:0.339801,L_matudae:2.40991)n12:4.13149)n9:0.161077,L_cuspidata:2.46192)16100.0:1.31919)n0;
+
+
+Leucaena2.rates_tree file - branch rate lengths only
+((((((((L_macrophylla_ist:2.71478,L_macrophylla_mac:4.43147)0.979032,L_trichodes:2.53459)0.607498,(L_cruziana:7.65575,L_lanceolata:2.3919)0.891807)0.313787,L_multicapitula:0.624148)0.0994231,((L_salvadorensis:0.470236,L_shannonii:0.193506)0.102549,L_lempirana:0.748741)0.214088)0.352788,((L_zacapana:3.5335,L_collinsii:2.673)0.362625,L_magnifica:2.9295)1.13047)0.534643,L_trichandra:0.373802)2.23275,((((L_retusa:11.8786,L_greggii:1.35474)6.51895,L_pulverulenta:1.58982)2.25334,(L_esculenta:0.339801,L_matudae:2.40991)4.13149)0.161077,L_cuspidata:2.46192)1.31919)n0;
